@@ -30,12 +30,6 @@ type ClusterReport struct {
 	Changed int
 }
 
-const (
-	colorReset = "\033[0m"
-	colorRed   = "\033[31m"
-	colorGreen = "\033[32m"
-)
-
 func PrintCluster(w io.Writer, report ClusterReport, mode diff.Mode) {
 	if len(report.Charts) == 0 {
 		fmt.Fprintf(w, "== Cluster: %s ==\nNo effective changes.\n\n", report.Name)
@@ -48,7 +42,11 @@ func PrintCluster(w io.Writer, report ClusterReport, mode diff.Mode) {
 		for _, resource := range chart.Resources {
 			fmt.Fprintf(w, "Resource: %s/%s (%s)\n", resource.Kind, resource.Name, resource.State)
 			if (mode == diff.ModeSemantic || mode == diff.ModeBoth) && strings.TrimSpace(resource.Semantic) != "" {
-				fmt.Fprintln(w, colorizeSemantic(strings.TrimSpace(resource.Semantic)))
+				semanticConsole, err := diff.RenderSemanticConsole(resource.Result.Changes)
+				if err != nil || strings.TrimSpace(semanticConsole) == "" {
+					semanticConsole = resource.Semantic
+				}
+				fmt.Fprintln(w, strings.TrimSpace(semanticConsole))
 				fmt.Fprintln(w)
 			}
 			if ((mode == diff.ModeRaw || mode == diff.ModeBoth) || (mode == diff.ModeSemantic && strings.TrimSpace(resource.Semantic) == "")) && strings.TrimSpace(resource.Result.RawDiff) != "" {
@@ -65,29 +63,4 @@ func emptyToNone(v string) string {
 		return "<none>"
 	}
 	return v
-}
-
-func colorizeSemantic(report string) string {
-	lines := strings.Split(report, "\n")
-	activeColor := ""
-	for i, line := range lines {
-		switch line {
-		case "Old:":
-			activeColor = colorRed
-			lines[i] = colorRed + line + colorReset
-			continue
-		case "New:":
-			activeColor = colorGreen
-			lines[i] = colorGreen + line + colorReset
-			continue
-		}
-		if strings.HasPrefix(line, "Path: ") {
-			activeColor = ""
-			continue
-		}
-		if activeColor != "" && strings.TrimSpace(line) != "" {
-			lines[i] = activeColor + line + colorReset
-		}
-	}
-	return strings.Join(lines, "\n")
 }
