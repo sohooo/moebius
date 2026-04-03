@@ -375,6 +375,10 @@ func RenderSemanticConsole(changes []Change) (string, error) {
 	return renderSemanticReport(changes, true)
 }
 
+func RenderSemanticMarkdown(changes []Change) (string, error) {
+	return renderSemanticReportMarkdown(changes)
+}
+
 func renderSemanticReport(changes []Change, color bool) (string, error) {
 	if len(changes) == 0 {
 		return "", nil
@@ -387,6 +391,36 @@ func renderSemanticReport(changes []Change, color bool) (string, error) {
 		}
 		part := fmt.Sprintf("Path: %s (%s)\n%s", PathString(change.Path), change.State, body)
 		parts = append(parts, part)
+	}
+	return strings.Join(parts, "\n\n"), nil
+}
+
+func renderSemanticReportMarkdown(changes []Change) (string, error) {
+	if len(changes) == 0 {
+		return "", nil
+	}
+	var parts []string
+	for _, change := range changes {
+		body, ok := renderCollapsedMarkdownChange(change)
+		if !ok {
+			var lines []string
+			if change.Old != nil {
+				oldSnippet, err := renderSnippetForValue(change.Path, change.Old)
+				if err != nil {
+					return "", err
+				}
+				lines = append(lines, prefixBlock(oldSnippet, "- "))
+			}
+			if change.New != nil {
+				newSnippet, err := renderSnippetForValue(change.Path, change.New)
+				if err != nil {
+					return "", err
+				}
+				lines = append(lines, prefixBlock(newSnippet, "+ "))
+			}
+			body = strings.Join(lines, "\n")
+		}
+		parts = append(parts, fmt.Sprintf("# Path: %s (%s)\n%s", PathString(change.Path), change.State, body))
 	}
 	return strings.Join(parts, "\n\n"), nil
 }
@@ -484,6 +518,57 @@ func renderCollapsedChange(change Change, color bool) (string, bool) {
 	return strings.Join(lines, "\n"), true
 }
 
+func renderCollapsedMarkdownChange(change Change) (string, bool) {
+	if len(change.Path) == 0 {
+		return "", false
+	}
+
+	last := change.Path[len(change.Path)-1]
+	if last.Key == "" && last.Index == nil {
+		return "", false
+	}
+	if change.Old != nil && !isScalarValue(change.Old) {
+		return "", false
+	}
+	if change.New != nil && !isScalarValue(change.New) {
+		return "", false
+	}
+
+	var lines []string
+	indent := 0
+	for _, segment := range change.Path[:len(change.Path)-1] {
+		switch {
+		case segment.Key != "":
+			lines = append(lines, strings.Repeat(" ", indent)+segment.Key+":")
+			indent += 4
+		case segment.Index != nil:
+			lines = append(lines, strings.Repeat(" ", indent)+"-")
+			indent += 4
+		case segment.MatchKey != "":
+			lines = append(lines, strings.Repeat(" ", indent)+"- "+segment.MatchKey+": "+segment.MatchValue)
+			indent += 4
+		default:
+			return "", false
+		}
+	}
+
+	if change.Old != nil {
+		line, ok := renderLeafLine(last, indent, change.Old)
+		if !ok {
+			return "", false
+		}
+		lines = append(lines, "- "+line)
+	}
+	if change.New != nil {
+		line, ok := renderLeafLine(last, indent, change.New)
+		if !ok {
+			return "", false
+		}
+		lines = append(lines, "+ "+line)
+	}
+	return strings.Join(lines, "\n"), true
+}
+
 func renderLeafLine(segment Segment, indent int, value interface{}) (string, bool) {
 	scalar, ok := renderScalarInline(value)
 	if !ok {
@@ -528,6 +613,14 @@ func colorBlock(block string, color string) string {
 			continue
 		}
 		lines[i] = color + line + colorReset
+	}
+	return strings.Join(lines, "\n")
+}
+
+func prefixBlock(block, prefix string) string {
+	lines := strings.Split(block, "\n")
+	for i, line := range lines {
+		lines[i] = prefix + line
 	}
 	return strings.Join(lines, "\n")
 }

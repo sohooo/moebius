@@ -8,11 +8,15 @@ import (
 )
 
 type DiffMode string
+type OutputFormat string
 
 const (
 	DiffModeRaw      DiffMode = "raw"
 	DiffModeSemantic DiffMode = "semantic"
 	DiffModeBoth     DiffMode = "both"
+
+	OutputFormatPlain    OutputFormat = "plain"
+	OutputFormatMarkdown OutputFormat = "markdown"
 )
 
 type Options struct {
@@ -23,6 +27,7 @@ type Options struct {
 	OutputDir    string
 	ContextLines int
 	DiffMode     DiffMode
+	OutputFormat OutputFormat
 }
 
 func Parse(args []string, stdout io.Writer) (Options, error) {
@@ -31,6 +36,7 @@ func Parse(args []string, stdout io.Writer) (Options, error) {
 	opts.BaseRef = "master"
 	opts.ContextLines = 3
 	opts.DiffMode = DiffModeSemantic
+	opts.OutputFormat = OutputFormatPlain
 
 	fs := flag.NewFlagSet("møbius", flag.ContinueOnError)
 	fs.SetOutput(stdout)
@@ -47,6 +53,15 @@ func Parse(args []string, stdout io.Writer) (Options, error) {
 			return nil
 		default:
 			return fmt.Errorf("invalid diff mode %q", v)
+		}
+	})
+	fs.Func("output-format", "Output format: plain or markdown", func(v string) error {
+		switch OutputFormat(v) {
+		case OutputFormatPlain, OutputFormatMarkdown:
+			opts.OutputFormat = OutputFormat(v)
+			return nil
+		default:
+			return fmt.Errorf("invalid output format %q", v)
 		}
 	})
 

@@ -115,7 +115,7 @@ func Run(args []string) error {
 		if err != nil {
 			return err
 		}
-		output.PrintCluster(os.Stdout, report, diff.Mode(opts.DiffMode))
+		output.PrintCluster(os.Stdout, report, diff.Mode(opts.DiffMode), opts.OutputFormat)
 	}
 
 	if opts.OutputDir != "" {

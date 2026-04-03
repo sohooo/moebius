@@ -79,6 +79,9 @@ Available flags:
 - `--output-dir PATH` keep rendered manifests and diff files
 - `--context-lines N` set unified diff context
 - `--diff-mode raw|semantic|both` choose output mode
+- `--output-format plain|markdown` choose terminal output or markdown-ready output
+
+Markdown mode is intended for copy and paste into merge requests or documentation. It uses markdown headings, fenced `diff` blocks, and markdown summary tables.
 
 ## How It Works
 
