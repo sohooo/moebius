@@ -1,3 +1,4 @@
+// Package resources loads and splits rendered Kubernetes manifests.
 package resources
 
 import (

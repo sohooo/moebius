@@ -1,3 +1,4 @@
+// Package output renders cluster reports for terminals, markdown, and MR notes.
 package output
 
 import (
@@ -119,15 +120,15 @@ func renderClusterPlain(report ClusterReport, mode diff.Mode) (string, error) {
 		fmt.Fprintf(&b, "-- Chart: %s (namespace: %s) --\n", chart.Name, emptyToNone(chart.Namespace))
 		for _, resource := range chart.Resources {
 			fmt.Fprintf(&b, "Resource: %s/%s (%s)\n", resource.Kind, resource.Name, resource.State)
-			if (mode == diff.ModeSemantic || mode == diff.ModeBoth) && strings.TrimSpace(resource.Semantic) != "" {
-				semanticConsole, err := diff.RenderSemanticConsole(resource.Result.Changes)
-				if err != nil || strings.TrimSpace(semanticConsole) == "" {
-					semanticConsole = resource.Semantic
-				}
+			semanticConsole, err := diff.RenderSemanticConsole(resource.Result.Changes)
+			if err != nil || strings.TrimSpace(semanticConsole) == "" {
+				semanticConsole = resource.Semantic
+			}
+			if (mode == diff.ModeSemantic || mode == diff.ModeBoth) && strings.TrimSpace(semanticConsole) != "" {
 				b.WriteString(strings.TrimSpace(semanticConsole))
 				b.WriteString("\n\n")
 			}
-			if ((mode == diff.ModeRaw || mode == diff.ModeBoth) || (mode == diff.ModeSemantic && strings.TrimSpace(resource.Semantic) == "")) && strings.TrimSpace(resource.Result.RawDiff) != "" {
+			if ((mode == diff.ModeRaw || mode == diff.ModeBoth) || (mode == diff.ModeSemantic && strings.TrimSpace(semanticConsole) == "")) && strings.TrimSpace(resource.Result.RawDiff) != "" {
 				b.WriteString(strings.TrimSpace(resource.Result.RawDiff))
 				b.WriteString("\n\n")
 			}
@@ -154,17 +155,17 @@ func renderClusterMarkdown(report ClusterReport, mode diff.Mode) (string, error)
 		fmt.Fprintf(&b, "- Namespace: `%s`\n\n", emptyToNone(chart.Namespace))
 		for _, resource := range chart.Resources {
 			fmt.Fprintf(&b, "#### Resource `%s/%s` (%s)\n\n", resource.Kind, resource.Name, resource.State)
-			if (mode == diff.ModeSemantic || mode == diff.ModeBoth) && strings.TrimSpace(resource.Semantic) != "" {
-				semanticMarkdown, err := diff.RenderSemanticMarkdown(resource.Result.Changes)
-				if err != nil || strings.TrimSpace(semanticMarkdown) == "" {
-					semanticMarkdown = resource.Semantic
-				}
+			semanticMarkdown, err := diff.RenderSemanticMarkdown(resource.Result.Changes)
+			if err != nil || strings.TrimSpace(semanticMarkdown) == "" {
+				semanticMarkdown = resource.Semantic
+			}
+			if (mode == diff.ModeSemantic || mode == diff.ModeBoth) && strings.TrimSpace(semanticMarkdown) != "" {
 				fmt.Fprintln(&b, "```diff")
 				fmt.Fprintln(&b, strings.TrimSpace(semanticMarkdown))
 				fmt.Fprintln(&b, "```")
 				fmt.Fprintln(&b)
 			}
-			if ((mode == diff.ModeRaw || mode == diff.ModeBoth) || (mode == diff.ModeSemantic && strings.TrimSpace(resource.Semantic) == "")) && strings.TrimSpace(resource.Result.RawDiff) != "" {
+			if ((mode == diff.ModeRaw || mode == diff.ModeBoth) || (mode == diff.ModeSemantic && strings.TrimSpace(semanticMarkdown) == "")) && strings.TrimSpace(resource.Result.RawDiff) != "" {
 				label := "Raw diff"
 				if mode == diff.ModeRaw {
 					label = "Diff"

@@ -1,3 +1,4 @@
+// Package diff compares rendered YAML resources in raw and semantic forms.
 package diff
 
 import (

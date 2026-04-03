@@ -52,6 +52,12 @@ Build the native binary:
 make build
 ```
 
+Run the standard local verification pass:
+
+```bash
+make verify
+```
+
 Render and compare changed clusters in the current branch:
 
 ```bash
@@ -68,6 +74,12 @@ Post or update the sticky merge request comment from a GitLab MR pipeline:
 
 ```bash
 ./bin/møbius comment
+```
+
+Render markdown locally for copy and paste:
+
+```bash
+make diff-markdown
 ```
 
 Persist rendered artifacts and diff outputs:
@@ -91,6 +103,7 @@ Available flags:
 Markdown mode is intended for copy and paste into merge requests or documentation. It uses markdown headings, fenced `diff` blocks, and markdown summary tables.
 
 The `comment` subcommand always uses markdown output internally and posts it to the merge request as a single sticky bot note.
+If the sticky note body is already up to date, `møbius` leaves it unchanged instead of issuing another update.
 
 ## How It Works
 
@@ -125,6 +138,7 @@ The baseline is not the current tip of `master`. It is the git merge-base betwee
 - make the target branch ref, usually `master`, available locally
 - provide the repository checkout
 - provide `CI_PROJECT_ID`, `CI_MERGE_REQUEST_IID`, and `CI_JOB_TOKEN`
+- provide either `CI_API_V4_URL` or `CI_SERVER_URL`
 - provide network and credentials only if OCI chart access requires them
 
 Example GitLab job:

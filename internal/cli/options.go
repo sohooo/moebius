@@ -1,3 +1,4 @@
+// Package cli parses møbius command-line flags and subcommands.
 package cli
 
 import (

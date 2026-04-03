@@ -1,3 +1,4 @@
+// Package gitlab provides the GitLab API client and CI target resolution.
 package gitlab
 
 import (

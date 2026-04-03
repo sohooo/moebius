@@ -9,7 +9,7 @@ GOMODCACHE ?= /tmp/mobius-gomodcache
 export GOCACHE
 export GOMODCACHE
 
-.PHONY: build test fmt tidy run clean verify help
+.PHONY: build test fmt tidy run clean verify help diff-markdown comment
 
 build: $(BINARY)
 
@@ -29,6 +29,12 @@ tidy:
 run:
 	./$(BINARY) diff
 
+diff-markdown:
+	./$(BINARY) diff --output-format markdown
+
+comment:
+	./$(BINARY) comment
+
 verify: fmt test build
 
 clean:
@@ -41,5 +47,7 @@ help:
 		'fmt     Format Go sources with gofmt' \
 		'tidy    Sync Go module dependencies' \
 		'run     Run "bin/møbius diff"' \
+		'diff-markdown  Run "bin/møbius diff --output-format markdown"' \
+		'comment Run "bin/møbius comment"' \
 		'verify  Format, test, and build' \
 		'clean   Remove the built binary'
