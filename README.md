@@ -33,7 +33,7 @@ The current demo repository also contains a sample chart under [charts/hello-wor
 
 ## Implementation
 
-`møbius` is now a native Go CLI. The compiled binary is named exactly `møbius`.
+`møbius` is now a native Go CLI. The compiled binary is named exactly `møbius` and is built to `bin/mobius` for local use.
 
 It is self-contained at runtime and does not depend on external `git`, `helm`, `yq`, `diff`, or `delta` executables. Instead, it uses Go libraries for:
 
@@ -42,32 +42,32 @@ It is self-contained at runtime and does not depend on external `git`, `helm`, `
 - YAML parsing and resource splitting
 - raw unified diffs and semantic YAML diffs
 
-The repository still provides [bin/mobius](/Users/sven/Code/lab/møbius/bin/mobius) as a compatibility wrapper for local development.
+`bin/mobius` is a generated build artifact and is ignored in Git.
 
 ## Usage
 
 Build the native binary:
 
 ```bash
-go build -o møbius ./cmd/mobius
+make build
 ```
 
 Render and compare changed clusters in the current branch:
 
 ```bash
-./møbius diff
+./bin/mobius diff
 ```
 
 Render and compare one specific cluster:
 
 ```bash
-./møbius diff --cluster kube-bravo
+./bin/mobius diff --cluster kube-bravo
 ```
 
 Persist rendered artifacts and diff outputs:
 
 ```bash
-./møbius diff --cluster kube-bravo --output-dir .mobius-out
+./bin/mobius diff --cluster kube-bravo --output-dir .mobius-out
 ```
 
 Available flags:
@@ -121,9 +121,9 @@ mobius-diff:
   stage: test
   image: golang:1.25
   before_script:
-    - go build -o møbius ./cmd/mobius
+    - make build
   script:
-    - ./møbius diff --output-dir .mobius-out
+    - ./bin/mobius diff --output-dir .mobius-out
   artifacts:
     when: always
     paths:
