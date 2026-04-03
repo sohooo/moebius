@@ -7,10 +7,14 @@ import (
 	"io"
 )
 
+type Command string
 type DiffMode string
 type OutputFormat string
 
 const (
+	CommandDiff    Command = "diff"
+	CommandComment Command = "comment"
+
 	DiffModeRaw      DiffMode = "raw"
 	DiffModeSemantic DiffMode = "semantic"
 	DiffModeBoth     DiffMode = "both"
@@ -20,6 +24,7 @@ const (
 )
 
 type Options struct {
+	Command      Command
 	ClustersDir  string
 	BaseRef      string
 	Cluster      string
@@ -28,6 +33,10 @@ type Options struct {
 	ContextLines int
 	DiffMode     DiffMode
 	OutputFormat OutputFormat
+
+	ProjectID       string
+	MergeRequestIID string
+	GitLabBaseURL   string
 }
 
 func Parse(args []string, stdout io.Writer) (Options, error) {
@@ -46,6 +55,9 @@ func Parse(args []string, stdout io.Writer) (Options, error) {
 	fs.BoolVar(&opts.AllClusters, "all-clusters", false, "Render and compare all clusters")
 	fs.StringVar(&opts.OutputDir, "output-dir", "", "Persist rendered artifacts and diffs under PATH")
 	fs.IntVar(&opts.ContextLines, "context-lines", opts.ContextLines, "Unified diff context lines")
+	fs.StringVar(&opts.ProjectID, "project-id", "", "GitLab project ID override for comment mode")
+	fs.StringVar(&opts.MergeRequestIID, "mr-iid", "", "GitLab merge request IID override for comment mode")
+	fs.StringVar(&opts.GitLabBaseURL, "gitlab-base-url", "", "GitLab API base URL override for comment mode")
 	fs.Func("diff-mode", "Diff output mode: raw, semantic, or both", func(v string) error {
 		switch DiffMode(v) {
 		case DiffModeRaw, DiffModeSemantic, DiffModeBoth:
@@ -66,7 +78,7 @@ func Parse(args []string, stdout io.Writer) (Options, error) {
 	})
 
 	fs.Usage = func() {
-		fmt.Fprintf(stdout, "Usage:\n  møbius diff [options]\n\nOptions:\n")
+		fmt.Fprintf(stdout, "Usage:\n  møbius <diff|comment> [options]\n\nOptions:\n")
 		fs.PrintDefaults()
 	}
 
@@ -74,9 +86,14 @@ func Parse(args []string, stdout io.Writer) (Options, error) {
 		fs.Usage()
 		return opts, flag.ErrHelp
 	}
-	if args[0] != "diff" {
+
+	switch Command(args[0]) {
+	case CommandDiff, CommandComment:
+		opts.Command = Command(args[0])
+	default:
 		return opts, fmt.Errorf("unknown subcommand %q", args[0])
 	}
+
 	if err := fs.Parse(args[1:]); err != nil {
 		return opts, err
 	}
@@ -85,6 +102,9 @@ func Parse(args []string, stdout io.Writer) (Options, error) {
 	}
 	if opts.ContextLines < 0 {
 		return opts, errors.New("--context-lines must be >= 0")
+	}
+	if opts.Command == CommandComment {
+		opts.OutputFormat = OutputFormatMarkdown
 	}
 	return opts, nil
 }

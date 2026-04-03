@@ -64,6 +64,12 @@ Render and compare one specific cluster:
 ./bin/møbius diff --cluster kube-bravo
 ```
 
+Post or update the sticky merge request comment from a GitLab MR pipeline:
+
+```bash
+./bin/møbius comment
+```
+
 Persist rendered artifacts and diff outputs:
 
 ```bash
@@ -80,8 +86,11 @@ Available flags:
 - `--context-lines N` set unified diff context
 - `--diff-mode raw|semantic|both` choose output mode
 - `--output-format plain|markdown` choose terminal output or markdown-ready output
+- `comment` supports `--project-id`, `--mr-iid`, and `--gitlab-base-url` overrides for manual testing
 
 Markdown mode is intended for copy and paste into merge requests or documentation. It uses markdown headings, fenced `diff` blocks, and markdown summary tables.
+
+The `comment` subcommand always uses markdown output internally and posts it to the merge request as a single sticky bot note.
 
 ## How It Works
 
@@ -115,6 +124,7 @@ The baseline is not the current tip of `master`. It is the git merge-base betwee
 - fetch enough git history for `git merge-base`
 - make the target branch ref, usually `master`, available locally
 - provide the repository checkout
+- provide `CI_PROJECT_ID`, `CI_MERGE_REQUEST_IID`, and `CI_JOB_TOKEN`
 - provide network and credentials only if OCI chart access requires them
 
 Example GitLab job:
@@ -126,7 +136,7 @@ mobius-diff:
   before_script:
     - make build
   script:
-    - ./bin/møbius diff --output-dir .mobius-out
+    - ./bin/møbius comment --output-dir .mobius-out
   artifacts:
     when: always
     paths:

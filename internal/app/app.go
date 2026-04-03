@@ -1,6 +1,7 @@
 package app
 
 import (
+	"context"
 	"errors"
 	"flag"
 	"fmt"
@@ -14,6 +15,7 @@ import (
 	"mobius/internal/cli"
 	"mobius/internal/config"
 	"mobius/internal/diff"
+	"mobius/internal/gitlab"
 	"mobius/internal/gitrepo"
 	"mobius/internal/helmrender"
 	"mobius/internal/output"
@@ -29,30 +31,56 @@ func Run(args []string) error {
 		return err
 	}
 
-	repo, err := gitrepo.Open(".")
-	if err != nil {
-		return err
-	}
-	head, err := repo.ResolveCommit("HEAD")
-	if err != nil {
-		return err
-	}
-	baseRef, err := repo.ResolveCommit(opts.BaseRef)
-	if err != nil {
-		return err
-	}
-	mergeBase, err := repo.MergeBase(head, baseRef)
+	reports, outputDir, err := buildReports(opts)
 	if err != nil {
 		return err
 	}
 
+	switch opts.Command {
+	case cli.CommandComment:
+		if err := postComment(opts, reports); err != nil {
+			return err
+		}
+	default:
+		if len(reports) == 0 {
+			fmt.Fprintln(os.Stdout, "No affected clusters.")
+			return nil
+		}
+		if err := output.PrintReports(os.Stdout, reports, diff.Mode(opts.DiffMode), opts.OutputFormat); err != nil {
+			return err
+		}
+		if opts.OutputDir != "" {
+			fmt.Fprintf(os.Stdout, "Artifacts written to %s\n", outputDir)
+		}
+	}
+
+	return nil
+}
+
+func buildReports(opts cli.Options) ([]output.ClusterReport, string, error) {
+	repo, err := gitrepo.Open(".")
+	if err != nil {
+		return nil, "", err
+	}
+	head, err := repo.ResolveCommit("HEAD")
+	if err != nil {
+		return nil, "", err
+	}
+	baseRef, err := repo.ResolveCommit(opts.BaseRef)
+	if err != nil {
+		return nil, "", err
+	}
+	mergeBase, err := repo.MergeBase(head, baseRef)
+	if err != nil {
+		return nil, "", err
+	}
+
 	clusters, err := selectClusters(repo, opts, mergeBase, head)
 	if err != nil {
-		return err
+		return nil, "", err
 	}
 	if len(clusters) == 0 {
-		fmt.Fprintln(os.Stdout, "No affected clusters.")
-		return nil
+		return nil, "", nil
 	}
 
 	outputDir := opts.OutputDir
@@ -60,13 +88,13 @@ func Run(args []string) error {
 	if outputDir == "" {
 		outputDir, err = os.MkdirTemp("", "mobius-output-")
 		if err != nil {
-			return err
+			return nil, "", err
 		}
 		cleanupOutput = true
 	}
 	tempRoot, err := os.MkdirTemp("", "mobius-work-")
 	if err != nil {
-		return err
+		return nil, "", err
 	}
 	defer os.RemoveAll(tempRoot)
 	if cleanupOutput {
@@ -77,7 +105,7 @@ func Run(args []string) error {
 	baselineRoot := filepath.Join(tempRoot, "baseline-tree")
 	for _, dir := range []string{cacheDir, baselineRoot} {
 		if err := os.MkdirAll(dir, 0o755); err != nil {
-			return err
+			return nil, "", err
 		}
 	}
 
@@ -87,40 +115,86 @@ func Run(args []string) error {
 	diffOutput := filepath.Join(outputDir, "diff")
 	for _, dir := range []string{currentOutput, baselineOutput, diffOutput} {
 		if err := os.MkdirAll(dir, 0o755); err != nil {
-			return err
+			return nil, "", err
 		}
 	}
 
+	var reports []output.ClusterReport
 	for _, cluster := range clusters {
 		currentExists := fileExists(filepath.Join(repo.Root(), opts.ClustersDir, cluster, "apps.yaml"))
 		baselineExists, err := repo.PathExistsAtCommit(mergeBase, filepath.ToSlash(filepath.Join(opts.ClustersDir, cluster, "apps.yaml")))
 		if err != nil {
-			return err
+			return nil, "", err
 		}
 		if !currentExists && !baselineExists {
-			return fmt.Errorf("cluster %q does not exist in current worktree or at merge-base", cluster)
+			return nil, "", fmt.Errorf("cluster %q does not exist in current worktree or at merge-base", cluster)
 		}
 
 		if err := prepareBaselineCluster(repo, mergeBase, opts.ClustersDir, cluster, baselineRoot); err != nil {
-			return err
+			return nil, "", err
 		}
 		if err := renderCluster(repo.Root(), opts.ClustersDir, cluster, currentOutput, renderer); err != nil {
-			return err
+			return nil, "", err
 		}
 		if err := renderCluster(baselineRoot, opts.ClustersDir, cluster, baselineOutput, renderer); err != nil {
-			return err
+			return nil, "", err
 		}
 
 		report, err := compareCluster(cluster, baselineOutput, currentOutput, diffOutput, opts.ContextLines, diff.Mode(opts.DiffMode))
 		if err != nil {
-			return err
+			return nil, "", err
 		}
-		output.PrintCluster(os.Stdout, report, diff.Mode(opts.DiffMode), opts.OutputFormat)
+		reports = append(reports, report)
 	}
 
-	if opts.OutputDir != "" {
-		fmt.Fprintf(os.Stdout, "Artifacts written to %s\n", outputDir)
+	if cleanupOutput {
+		// Caller only needs stdout/comment body when no output-dir was provided.
+		// Keep the temp output around until after rendering/commenting by returning the path,
+		// then let the deferred cleanup above remove it once this function returns.
 	}
+
+	return reports, outputDir, nil
+}
+
+func postComment(opts cli.Options, reports []output.ClusterReport) error {
+	target, err := gitlab.ResolveTarget(opts)
+	if err != nil {
+		return err
+	}
+	client, err := gitlab.New(target.BaseURL, target.JobToken)
+	if err != nil {
+		return err
+	}
+
+	meta := output.NoteMetadata{
+		PipelineURL: os.Getenv("CI_PIPELINE_URL"),
+		JobURL:      os.Getenv("CI_JOB_URL"),
+		CommitSHA:   os.Getenv("CI_COMMIT_SHA"),
+	}
+	body, err := output.RenderCommentBody(reports, diff.Mode(opts.DiffMode), meta)
+	if err != nil {
+		return err
+	}
+
+	ctx := context.Background()
+	notes, err := client.ListMergeRequestNotes(ctx, target.ProjectID, target.MergeRequestIID)
+	if err != nil {
+		return err
+	}
+	for _, note := range notes {
+		if strings.Contains(note.Body, output.StickyMarker) {
+			if _, err := client.UpdateMergeRequestNote(ctx, target.ProjectID, target.MergeRequestIID, note.ID, body); err != nil {
+				return err
+			}
+			fmt.Fprintf(os.Stdout, "Updated møbius MR note on !%s\n", target.MergeRequestIID)
+			return nil
+		}
+	}
+
+	if _, err := client.CreateMergeRequestNote(ctx, target.ProjectID, target.MergeRequestIID, body); err != nil {
+		return err
+	}
+	fmt.Fprintf(os.Stdout, "Created møbius MR note on !%s\n", target.MergeRequestIID)
 	return nil
 }
 
