@@ -11,6 +11,7 @@ import (
 type Release struct {
 	Name      string `yaml:"name"`
 	Namespace string `yaml:"namespace"`
+	Project   string `yaml:"project"`
 	Chart     string `yaml:"chart"`
 	Version   string `yaml:"version"`
 }
@@ -49,6 +50,9 @@ func LoadReleases(root, clustersDir, cluster string) ([]Release, error) {
 	return releases, nil
 }
 
-func OverridePath(root, clustersDir, cluster, releaseName string) string {
-	return filepath.Join(root, clustersDir, cluster, "overrides", releaseName+".yaml")
+func OverridePath(root, clustersDir, cluster, project, releaseName string) string {
+	if project == "" {
+		return filepath.Join(root, clustersDir, cluster, "overrides", releaseName+".yaml")
+	}
+	return filepath.Join(root, clustersDir, cluster, "overrides", project, releaseName+".yaml")
 }

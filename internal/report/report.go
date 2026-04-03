@@ -184,7 +184,7 @@ func renderCluster(root, clustersDir, cluster, outputRoot string, renderer *helm
 	}
 
 	for _, release := range releases {
-		overridePath := config.OverridePath(root, clustersDir, cluster, release.Name)
+		overridePath := config.OverridePath(root, clustersDir, cluster, release.Project, release.Name)
 		if !fileExists(overridePath) {
 			overridePath = ""
 		}

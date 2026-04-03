@@ -22,12 +22,13 @@ This gives reviewers a concrete view of what a merge request would actually chan
 Cluster definitions live under `clusters/`.
 
 - `clusters/<cluster>/apps.yaml` lists the Helm releases for that cluster
-- `clusters/<cluster>/overrides/<chart-name>.yaml` optionally overrides chart values for the release whose `name` matches `<chart-name>`
+- each release entry must include `project: <project-name>`
+- `clusters/<cluster>/overrides/<project-name>/<chart-name>.yaml` optionally overrides chart values for the release whose `name` matches `<chart-name>`
 
 Example:
 
 - `clusters/kube-bravo/apps.yaml`
-- `clusters/kube-bravo/overrides/hello-world.yaml`
+- `clusters/kube-bravo/overrides/test/hello-world.yaml`
 
 The current demo repository also contains a sample chart under [charts/hello-world](/Users/sven/Code/lab/møbius/charts/hello-world).
 
@@ -112,7 +113,7 @@ For each selected cluster, `møbius`:
 1. reads `clusters/<cluster>/apps.yaml`
 2. resolves the merge-base with the configured base ref using native Git handling
 3. renders every release in that file with the Helm Go SDK
-4. applies `clusters/<cluster>/overrides/<name>.yaml` if it exists
+4. applies `clusters/<cluster>/overrides/<project>/<name>.yaml` if it exists
 5. writes one manifest per release:
    - `current/<cluster>/<chart-name>/rendered.yaml`
    - `current/<cluster>/<chart-name>/resources/<kind>--<namespace-or-cluster>--<name>.yaml`
