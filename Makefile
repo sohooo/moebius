@@ -1,5 +1,5 @@
 GO ?= go
-BINARY ?= bin/mobius
+BINARY ?= bin/møbius
 CMD_DIR := ./cmd/mobius
 PKGS := ./...
 GOFILES := $(shell find cmd internal -name '*.go' -type f | sort)
@@ -36,10 +36,10 @@ clean:
 
 help:
 	@printf '%s\n' \
-		'build   Build the møbius binary at bin/mobius' \
+		'build   Build the møbius binary at bin/møbius' \
 		'test    Run Go tests' \
 		'fmt     Format Go sources with gofmt' \
 		'tidy    Sync Go module dependencies' \
-		'run     Run "bin/mobius diff"' \
+		'run     Run "bin/møbius diff"' \
 		'verify  Format, test, and build' \
 		'clean   Remove the built binary'

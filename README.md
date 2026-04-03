@@ -33,7 +33,7 @@ The current demo repository also contains a sample chart under [charts/hello-wor
 
 ## Implementation
 
-`møbius` is now a native Go CLI. The compiled binary is named exactly `møbius` and is built to `bin/mobius` for local use.
+`møbius` is now a native Go CLI. The compiled binary is named exactly `møbius` and is built to `bin/møbius` for local use.
 
 It is self-contained at runtime and does not depend on external `git`, `helm`, `yq`, `diff`, or `delta` executables. Instead, it uses Go libraries for:
 
@@ -42,7 +42,7 @@ It is self-contained at runtime and does not depend on external `git`, `helm`, `
 - YAML parsing and resource splitting
 - raw unified diffs and semantic YAML diffs
 
-`bin/mobius` is a generated build artifact and is ignored in Git.
+`bin/møbius` is a generated build artifact and is ignored in Git.
 
 ## Usage
 
@@ -55,19 +55,19 @@ make build
 Render and compare changed clusters in the current branch:
 
 ```bash
-./bin/mobius diff
+./bin/møbius diff
 ```
 
 Render and compare one specific cluster:
 
 ```bash
-./bin/mobius diff --cluster kube-bravo
+./bin/møbius diff --cluster kube-bravo
 ```
 
 Persist rendered artifacts and diff outputs:
 
 ```bash
-./bin/mobius diff --cluster kube-bravo --output-dir .mobius-out
+./bin/møbius diff --cluster kube-bravo --output-dir .mobius-out
 ```
 
 Available flags:
@@ -123,7 +123,7 @@ mobius-diff:
   before_script:
     - make build
   script:
-    - ./bin/mobius diff --output-dir .mobius-out
+    - ./bin/møbius diff --output-dir .mobius-out
   artifacts:
     when: always
     paths:
