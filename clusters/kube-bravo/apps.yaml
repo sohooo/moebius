@@ -1,0 +1,4 @@
+- name: hello-world
+  namespace: hello-world
+  chart: charts/hello-world  # in the future, these will be oci:// URLs
+  version: 0.1.0

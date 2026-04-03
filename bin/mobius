@@ -1,0 +1,425 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+PROGRAM_NAME="$(basename "$0")"
+
+usage() {
+  cat <<EOF
+Usage:
+  $PROGRAM_NAME diff [options]
+
+Options:
+  --clusters-dir PATH   Cluster definitions directory (default: clusters)
+  --base-ref REF        Base ref used for merge-base (default: master)
+  --cluster NAME        Render and compare a single cluster
+  --all-clusters        Render and compare all clusters
+  --output-dir PATH     Persist rendered artifacts and diffs under PATH
+  --context-lines N     Unified diff context lines (default: 3)
+  -h, --help            Show this help
+EOF
+}
+
+fail() {
+  echo "Error: $*" >&2
+  exit 1
+}
+
+require_tool() {
+  command -v "$1" >/dev/null 2>&1 || fail "required tool '$1' is not available in PATH"
+}
+
+ensure_dir() {
+  mkdir -p "$1"
+}
+
+git_path_exists() {
+  local ref="$1"
+  local path="$2"
+  git cat-file -e "${ref}:${path}" 2>/dev/null
+}
+
+materialize_git_file() {
+  local ref="$1"
+  local rel_path="$2"
+  local dest_root="$3"
+
+  if ! git_path_exists "$ref" "$rel_path"; then
+    return 1
+  fi
+
+  ensure_dir "$dest_root/$(dirname "$rel_path")"
+  git show "${ref}:${rel_path}" >"$dest_root/$rel_path"
+}
+
+materialize_git_dir() {
+  local ref="$1"
+  local rel_path="$2"
+  local dest_root="$3"
+  local found=0
+  local file
+
+  while IFS= read -r file; do
+    found=1
+    ensure_dir "$dest_root/$(dirname "$file")"
+    git show "${ref}:${file}" >"$dest_root/$file"
+  done < <(git ls-tree -r --name-only "$ref" -- "$rel_path")
+
+  if [[ $found -eq 1 ]]; then
+    return 0
+  fi
+
+  return 1
+}
+
+collect_clusters_all() {
+  local root="$1"
+
+  if [[ ! -d "$root" ]]; then
+    return 0
+  fi
+
+  find "$root" -mindepth 2 -maxdepth 2 -type f -name 'apps.yaml' -print \
+    | sed "s#^${root}/##; s#/apps.yaml\$##" \
+    | sort
+}
+
+collect_clusters_changed() {
+  local root="$1"
+  local merge_base="$2"
+
+  git diff --name-only "$merge_base" HEAD -- "$root" \
+    | awk -v prefix="${root}/" 'index($0, prefix) == 1 { sub(prefix, "", $0); split($0, parts, "/"); if (parts[1] != "") print parts[1] }' \
+    | sort -u
+}
+
+validate_apps_file() {
+  local apps_file="$1"
+  local cluster="$2"
+
+  yq e 'type == "!!seq"' "$apps_file" >/dev/null \
+    || fail "cluster '$cluster' apps file must contain a YAML sequence: $apps_file"
+
+  local duplicates
+  duplicates="$(yq e -r '.[].name // ""' "$apps_file" | sort | uniq -d | sed '/^$/d')"
+  if [[ -n "$duplicates" ]]; then
+    fail "cluster '$cluster' has duplicate release names in $apps_file: $(echo "$duplicates" | tr '\n' ' ' | sed 's/ $//')"
+  fi
+}
+
+render_cluster() {
+  local source_root="$1"
+  local cluster="$2"
+  local clusters_dir="$3"
+  local mode_label="$4"
+  local output_root="$5"
+
+  local apps_file="$source_root/$clusters_dir/$cluster/apps.yaml"
+  if [[ ! -f "$apps_file" ]]; then
+    return 0
+  fi
+
+  validate_apps_file "$apps_file" "$cluster"
+  ensure_dir "$output_root/$cluster"
+
+  local release_lines
+  release_lines="$(yq e -r '.[] | [(.name // ""), (.namespace // ""), (.chart // ""), (.version // "")] | @tsv' "$apps_file")" \
+    || fail "failed to parse releases from $apps_file"
+
+  local line
+  while IFS=$'\t' read -r name namespace chart version; do
+    [[ -z "$name" ]] && fail "cluster '$cluster' contains a release without a name in $apps_file"
+    [[ -z "$namespace" ]] && fail "cluster '$cluster' release '$name' is missing namespace in $apps_file"
+    [[ -z "$chart" ]] && fail "cluster '$cluster' release '$name' is missing chart in $apps_file"
+
+    local override_file="$source_root/$clusters_dir/$cluster/overrides/$name.yaml"
+    local render_target="$output_root/$cluster/$name.yaml"
+
+    local helm_target="$chart"
+    if [[ "$chart" == oci://* ]]; then
+      [[ -n "$version" ]] || fail "cluster '$cluster' release '$name' uses OCI chart '$chart' without version"
+    else
+      helm_target="$source_root/$chart"
+      [[ -d "$helm_target" ]] || fail "cluster '$cluster' release '$name' references missing chart path '$chart' in $mode_label input"
+    fi
+
+    local cmd=(helm template "$name" "$helm_target" --namespace "$namespace")
+    if [[ "$chart" == oci://* ]]; then
+      cmd+=(--version "$version")
+    fi
+    if [[ -f "$override_file" ]]; then
+      cmd+=(--values "$override_file")
+    fi
+
+    "${cmd[@]}" >"$render_target" \
+      || fail "helm render failed for cluster '$cluster' release '$name' using $mode_label input"
+  done <<<"$release_lines"
+}
+
+prepare_baseline_cluster() {
+  local merge_base="$1"
+  local cluster="$2"
+  local clusters_dir="$3"
+  local baseline_root="$4"
+
+  local apps_rel="$clusters_dir/$cluster/apps.yaml"
+  if ! materialize_git_file "$merge_base" "$apps_rel" "$baseline_root"; then
+    return 0
+  fi
+
+  materialize_git_dir "$merge_base" "$clusters_dir/$cluster/overrides" "$baseline_root" >/dev/null 2>&1 || true
+
+  local baseline_apps="$baseline_root/$apps_rel"
+  validate_apps_file "$baseline_apps" "$cluster"
+
+  local release_lines
+  release_lines="$(yq e -r '.[] | [(.name // ""), (.chart // ""), (.version // "")] | @tsv' "$baseline_apps")" \
+    || fail "failed to parse baseline releases from $baseline_apps"
+
+  local line
+  while IFS=$'\t' read -r name chart version; do
+    [[ -z "$name" ]] && fail "cluster '$cluster' contains a baseline release without a name in $baseline_apps"
+    [[ -z "$chart" ]] && fail "cluster '$cluster' baseline release '$name' is missing chart in $baseline_apps"
+
+    if [[ "$chart" == oci://* ]]; then
+      [[ -n "$version" ]] || fail "cluster '$cluster' baseline release '$name' uses OCI chart '$chart' without version"
+      continue
+    fi
+
+    materialize_git_dir "$merge_base" "$chart" "$baseline_root" >/dev/null 2>&1 \
+      || fail "cluster '$cluster' baseline release '$name' references missing chart path '$chart' at merge-base"
+  done <<<"$release_lines"
+}
+
+compare_cluster() {
+  local cluster="$1"
+  local baseline_dir="$2"
+  local current_dir="$3"
+  local diff_dir="$4"
+  local context_lines="$5"
+  local empty_file="$6"
+
+  ensure_dir "$diff_dir/$cluster"
+
+  local names
+  names="$(
+    {
+      if [[ -d "$baseline_dir/$cluster" ]]; then
+        find "$baseline_dir/$cluster" -maxdepth 1 -type f -name '*.yaml' -print | xargs -n 1 basename 2>/dev/null | sed 's/\.yaml$//'
+      fi
+      if [[ -d "$current_dir/$cluster" ]]; then
+        find "$current_dir/$cluster" -maxdepth 1 -type f -name '*.yaml' -print | xargs -n 1 basename 2>/dev/null | sed 's/\.yaml$//'
+      fi
+    } | sort -u
+  )"
+
+  if [[ -z "$names" ]]; then
+    echo "== Cluster: $cluster =="
+    echo "No releases found."
+    echo
+    return 0
+  fi
+
+  local added=0
+  local removed=0
+  local changed=0
+  local printed_header=0
+  local name
+
+  while IFS= read -r name; do
+    [[ -z "$name" ]] && continue
+
+    local baseline_file="$baseline_dir/$cluster/$name.yaml"
+    local current_file="$current_dir/$cluster/$name.yaml"
+    local diff_file="$diff_dir/$cluster/$name.diff"
+    local state="changed"
+
+    if [[ ! -f "$baseline_file" ]]; then
+      state="added"
+      baseline_file="$empty_file"
+    elif [[ ! -f "$current_file" ]]; then
+      state="removed"
+      current_file="$empty_file"
+    fi
+
+    set +e
+    diff -U "$context_lines" "$baseline_file" "$current_file" >"$diff_file"
+    local diff_status=$?
+    set -e
+
+    case "$diff_status" in
+      0)
+        rm -f "$diff_file"
+        ;;
+      1)
+        if [[ $printed_header -eq 0 ]]; then
+          echo "== Cluster: $cluster =="
+          printed_header=1
+        fi
+
+        case "$state" in
+          added) added=$((added + 1)) ;;
+          removed) removed=$((removed + 1)) ;;
+          *) changed=$((changed + 1)) ;;
+        esac
+
+        echo "-- $name ($state) --"
+        cat "$diff_file"
+        echo
+        ;;
+      *)
+        fail "diff failed for cluster '$cluster' release '$name'"
+        ;;
+    esac
+  done <<<"$names"
+
+  if [[ $printed_header -eq 0 ]]; then
+    echo "== Cluster: $cluster =="
+    echo "No effective changes."
+    echo
+  else
+    echo "Summary for $cluster: added=$added removed=$removed changed=$changed"
+    echo
+  fi
+}
+
+main() {
+  require_tool git
+  require_tool helm
+  require_tool yq
+  require_tool diff
+
+  local subcommand="${1:-}"
+  if [[ -z "$subcommand" || "$subcommand" == "--help" || "$subcommand" == "-h" ]]; then
+    usage
+    exit 0
+  fi
+
+  shift
+
+  if [[ "$subcommand" != "diff" ]]; then
+    fail "unknown subcommand '$subcommand'"
+  fi
+
+  local clusters_dir="clusters"
+  local base_ref="master"
+  local selected_cluster=""
+  local all_clusters=0
+  local output_dir=""
+  local context_lines=3
+
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --clusters-dir)
+        [[ $# -ge 2 ]] || fail "--clusters-dir requires a value"
+        clusters_dir="$2"
+        shift 2
+        ;;
+      --base-ref)
+        [[ $# -ge 2 ]] || fail "--base-ref requires a value"
+        base_ref="$2"
+        shift 2
+        ;;
+      --cluster)
+        [[ $# -ge 2 ]] || fail "--cluster requires a value"
+        selected_cluster="$2"
+        shift 2
+        ;;
+      --all-clusters)
+        all_clusters=1
+        shift
+        ;;
+      --output-dir)
+        [[ $# -ge 2 ]] || fail "--output-dir requires a value"
+        output_dir="$2"
+        shift 2
+        ;;
+      --context-lines)
+        [[ $# -ge 2 ]] || fail "--context-lines requires a value"
+        context_lines="$2"
+        shift 2
+        ;;
+      -h|--help)
+        usage
+        exit 0
+        ;;
+      *)
+        fail "unknown option '$1'"
+        ;;
+    esac
+  done
+
+  [[ "$context_lines" =~ ^[0-9]+$ ]] || fail "--context-lines must be a non-negative integer"
+  [[ $all_clusters -eq 0 || -z "$selected_cluster" ]] || fail "--cluster and --all-clusters cannot be combined"
+
+  local repo_root
+  repo_root="$(git rev-parse --show-toplevel)" || fail "failed to determine repository root"
+
+  local merge_base
+  merge_base="$(git merge-base HEAD "$base_ref")" || fail "failed to determine merge-base between HEAD and '$base_ref'"
+
+  local cleanup_output=0
+  if [[ -z "$output_dir" ]]; then
+    output_dir="$(mktemp -d "${TMPDIR:-/tmp}/mobius-output.XXXXXX")"
+    cleanup_output=1
+  fi
+
+  local temp_root
+  temp_root="$(mktemp -d "${TMPDIR:-/tmp}/mobius-work.XXXXXX")"
+  local baseline_root="$temp_root/baseline-tree"
+  local empty_file="$temp_root/empty.yaml"
+  ensure_dir "$baseline_root"
+  : >"$empty_file"
+
+  trap "rm -rf '$temp_root'; if [[ $cleanup_output -eq 1 ]]; then rm -rf '$output_dir'; fi" EXIT
+
+  local current_output="$output_dir/current"
+  local baseline_output="$output_dir/baseline"
+  local diff_output="$output_dir/diff"
+  ensure_dir "$current_output"
+  ensure_dir "$baseline_output"
+  ensure_dir "$diff_output"
+
+  local clusters=()
+  if [[ -n "$selected_cluster" ]]; then
+    clusters=("$selected_cluster")
+  elif [[ $all_clusters -eq 1 ]]; then
+    while IFS= read -r cluster; do
+      [[ -n "$cluster" ]] && clusters+=("$cluster")
+    done < <(collect_clusters_all "$clusters_dir")
+  else
+    while IFS= read -r cluster; do
+      [[ -n "$cluster" ]] && clusters+=("$cluster")
+    done < <(collect_clusters_changed "$clusters_dir" "$merge_base")
+  fi
+
+  if [[ ${#clusters[@]} -eq 0 ]]; then
+    echo "No affected clusters."
+    exit 0
+  fi
+
+  local cluster
+  for cluster in "${clusters[@]}"; do
+    local current_apps="$repo_root/$clusters_dir/$cluster/apps.yaml"
+    local current_exists=0
+    local baseline_exists=0
+
+    [[ -f "$current_apps" ]] && current_exists=1
+    git_path_exists "$merge_base" "$clusters_dir/$cluster/apps.yaml" && baseline_exists=1 || true
+
+    if [[ $current_exists -eq 0 && $baseline_exists -eq 0 ]]; then
+      fail "cluster '$cluster' does not exist in current worktree or at merge-base"
+    fi
+
+    prepare_baseline_cluster "$merge_base" "$cluster" "$clusters_dir" "$baseline_root"
+    render_cluster "$repo_root" "$cluster" "$clusters_dir" "current" "$current_output"
+    render_cluster "$baseline_root" "$cluster" "$clusters_dir" "baseline" "$baseline_output"
+    compare_cluster "$cluster" "$baseline_output" "$current_output" "$diff_output" "$context_lines" "$empty_file"
+  done
+
+  if [[ $cleanup_output -eq 0 ]]; then
+    echo "Artifacts written to $output_dir"
+  fi
+}
+
+main "$@"
