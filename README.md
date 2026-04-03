@@ -12,7 +12,7 @@ Its job is to:
 
 - render the Helm charts that define a cluster from the merge-base with `master`
 - render the same cluster configuration in the context of the merge request
-- compare both rendered outputs chart by chart
+- compare both rendered outputs chart by chart and resource by resource
 - make the effective configuration change visible before the MR is merged
 
 This gives reviewers a concrete view of what a merge request would actually change in the cluster instead of only showing raw YAML or values file edits.
@@ -33,33 +33,41 @@ The current demo repository also contains a sample chart under [charts/hello-wor
 
 ## Implementation
 
-The first implementation is a shell-based CLI at [bin/mobius](/Users/sven/Code/lab/møbius/bin/mobius).
+`møbius` is now a native Go CLI. The compiled binary is named exactly `møbius`.
 
-It is intentionally small in scope and depends on a short list of external tools:
+It is self-contained at runtime and does not depend on external `git`, `helm`, `yq`, `diff`, or `delta` executables. Instead, it uses Go libraries for:
 
-- `git`
-- `helm`
-- `yq`
-- `diff`
+- Git repository access and merge-base resolution
+- Helm chart loading and rendering
+- YAML parsing and resource splitting
+- raw unified diffs and semantic YAML diffs
+
+The repository still provides [bin/mobius](/Users/sven/Code/lab/møbius/bin/mobius) as a compatibility wrapper for local development.
 
 ## Usage
+
+Build the native binary:
+
+```bash
+go build -o møbius ./cmd/mobius
+```
 
 Render and compare changed clusters in the current branch:
 
 ```bash
-bin/mobius diff
+./møbius diff
 ```
 
 Render and compare one specific cluster:
 
 ```bash
-bin/mobius diff --cluster kube-bravo
+./møbius diff --cluster kube-bravo
 ```
 
-Persist rendered artifacts and per-chart diffs:
+Persist rendered artifacts and diff outputs:
 
 ```bash
-bin/mobius diff --cluster kube-bravo --output-dir .mobius-out
+./møbius diff --cluster kube-bravo --output-dir .mobius-out
 ```
 
 Available flags:
@@ -70,19 +78,30 @@ Available flags:
 - `--all-clusters` process every cluster under `clusters/`
 - `--output-dir PATH` keep rendered manifests and diff files
 - `--context-lines N` set unified diff context
+- `--diff-mode raw|semantic|both` choose output mode
 
 ## How It Works
 
 For each selected cluster, `møbius`:
 
 1. reads `clusters/<cluster>/apps.yaml`
-2. renders every release in that file with `helm template`
-3. applies `clusters/<cluster>/overrides/<name>.yaml` if it exists
-4. writes one manifest per release:
-   - `current/<cluster>/<chart-name>.yaml`
-   - `baseline/<cluster>/<chart-name>.yaml`
-   - `diff/<cluster>/<chart-name>.diff`
-5. prints unified diffs grouped by cluster and chart
+2. resolves the merge-base with the configured base ref using native Git handling
+3. renders every release in that file with the Helm Go SDK
+4. applies `clusters/<cluster>/overrides/<name>.yaml` if it exists
+5. writes one manifest per release:
+   - `current/<cluster>/<chart-name>/rendered.yaml`
+   - `current/<cluster>/<chart-name>/resources/<kind>--<namespace-or-cluster>--<name>.yaml`
+   - `baseline/<cluster>/<chart-name>/resources/<kind>--<namespace-or-cluster>--<name>.yaml`
+   - `diff/<cluster>/<chart-name>/<resource-key>.diff`
+   - `diff/<cluster>/<chart-name>/<resource-key>.semantic.txt`
+6. prints diffs grouped by cluster, chart, and resource
+
+Console output includes:
+
+- the cluster name
+- the chart name and release namespace
+- the Kubernetes resource identity as `Kind/name`
+- semantic YAML context back to the changed path root in `semantic` mode
 
 The baseline is not the current tip of `master`. It is the git merge-base between `HEAD` and the configured base ref. This avoids unrelated drift from new commits on `master` while the MR is open.
 
@@ -92,20 +111,19 @@ The baseline is not the current tip of `master`. It is the git merge-base betwee
 
 - fetch enough git history for `git merge-base`
 - make the target branch ref, usually `master`, available locally
-- provide `helm`, `yq`, `git`, and `diff`
-- provide Helm registry authentication if any chart uses `oci://`
+- provide the repository checkout
+- provide network and credentials only if OCI chart access requires them
 
 Example GitLab job:
 
 ```yaml
 mobius-diff:
   stage: test
-  image: alpine/helm:3.18.4
+  image: golang:1.25
   before_script:
-    - apk add --no-cache bash git diffutils yq
-    - git fetch origin master
+    - go build -o møbius ./cmd/mobius
   script:
-    - bin/mobius diff --output-dir .mobius-out
+    - ./møbius diff --output-dir .mobius-out
   artifacts:
     when: always
     paths:
