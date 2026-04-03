@@ -336,9 +336,13 @@ func RenderSnippet(change Change) (string, error) {
 	if change.State == "removed" {
 		value = change.Old
 	}
+	return renderSnippetForValue(change.Path, value)
+}
+
+func renderSnippetForValue(path []Segment, value interface{}) (string, error) {
 	tree := value
-	for i := len(change.Path) - 1; i >= 0; i-- {
-		segment := change.Path[i]
+	for i := len(path) - 1; i >= 0; i-- {
+		segment := path[i]
 		switch {
 		case segment.Key != "":
 			tree = map[string]interface{}{segment.Key: tree}
@@ -363,11 +367,24 @@ func RenderSemanticReport(changes []Change) (string, error) {
 	}
 	var parts []string
 	for _, change := range changes {
-		snippet, err := RenderSnippet(change)
-		if err != nil {
-			return "", err
+		var body []string
+		if change.Old != nil {
+			oldSnippet, err := renderSnippetForValue(change.Path, change.Old)
+			if err != nil {
+				return "", err
+			}
+			body = append(body, "Old:")
+			body = append(body, oldSnippet)
 		}
-		part := fmt.Sprintf("Path: %s (%s)\n%s", PathString(change.Path), change.State, snippet)
+		if change.New != nil {
+			newSnippet, err := renderSnippetForValue(change.Path, change.New)
+			if err != nil {
+				return "", err
+			}
+			body = append(body, "New:")
+			body = append(body, newSnippet)
+		}
+		part := fmt.Sprintf("Path: %s (%s)\n%s", PathString(change.Path), change.State, strings.Join(body, "\n"))
 		parts = append(parts, part)
 	}
 	return strings.Join(parts, "\n\n"), nil
