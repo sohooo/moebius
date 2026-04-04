@@ -14,17 +14,39 @@ Then it compares both rendered results chart by chart and resource by resource, 
 
 `møbius` is designed to run as a separate tool in a GitLab merge request pipeline, typically from the cluster configuration repository. A common production setup is to build and publish the `møbius` image once, then run that image on a Kubernetes GitLab runner.
 
-### What `møbius comment` Does
+### Purpose
+
+In CI, `møbius` is meant to answer one question for reviewers:
+
+What effective cluster change will this merge request produce?
+
+`møbius` renders the cluster configuration at the merge-base and at the MR commit, compares both results, and turns that into a readable report.
+
+For CI usage there are two main modes:
+
+- `møbius diff`
+  Prints the report to the job output and optionally writes artifacts.
+- `møbius comment`
+  Posts the report back to the merge request as a sticky bot note.
+
+Sample outputs:
+
+- Markdown report: [docs/sample-report.md](docs/sample-report.md)
+- GitLab MR note: [docs/sample-comment.md](docs/sample-comment.md)
+
+### How `møbius comment` Works
 
 When a GitLab MR pipeline runs `møbius comment`, it:
 
 1. detects the current merge request from the GitLab CI environment
-2. renders the effective cluster state at the merge-base and at the MR commit
-3. builds a markdown diff report like the sample in [docs/sample-report.md](docs/sample-report.md)
-4. finds the existing `møbius` MR note, if one already exists
-5. creates that note if it does not exist yet
-6. updates the same note on later pipeline runs instead of creating duplicates
-7. leaves the note unchanged if the rendered report body is already up to date
+2. resolves the merge-base against the configured base ref
+3. renders the effective cluster state at the merge-base and at the MR commit
+4. compares both rendered states chart by chart and resource by resource
+5. builds a GitLab-native markdown report
+6. finds the existing `møbius` MR note, if one already exists
+7. creates that note if it does not exist yet
+8. updates the same note on later pipeline runs instead of creating duplicates
+9. leaves the note unchanged if the rendered report body is already up to date
 
 The posted note contains:
 
@@ -47,6 +69,8 @@ That gives reviewers:
 - a more compact MR note for larger diffs, with chart details expanded only when needed
 - a clearer picture of the effective cluster change than raw values-file edits alone
 
+### Configuration
+
 The job environment should:
 
 - fetch enough git history for merge-base calculation
@@ -58,9 +82,9 @@ The job environment should:
 
 The repository in which the pipeline runs should include the cluster definitions and any referenced local charts. Layout configuration can come from built-in defaults, an optional repo-root [config.yaml](config.yaml), or the `MOBIUS_CONFIG_YAML` environment variable.
 
-For repositories that already use the default layout, the pipeline only needs to reference the `møbius` image.
+For repositories that already use the default layout, the pipeline only needs to reference the `møbius` image. No explicit layout config is required.
 
-Example GitLab job:
+Default-layout example:
 
 ```yaml
 mobius-diff:
@@ -76,7 +100,15 @@ mobius-diff:
       - .mobius-out/
 ```
 
-Example GitLab job with a custom layout supplied entirely through CI:
+This job uses the built-in defaults:
+
+- clusters under `clusters/<cluster>`
+- apps file `apps.yaml`
+- release fields `name`, `namespace`, `project`, `chart`, `version`
+- overrides at `overrides/{project}/{name}.yaml`
+- fallback overrides at `overrides/{name}.yaml`
+
+Custom-layout example with configuration supplied entirely through CI:
 
 ```yaml
 mobius-diff:
@@ -106,6 +138,13 @@ mobius-diff:
     paths:
       - .mobius-out/
 ```
+
+Configuration precedence is:
+
+1. built-in defaults
+2. optional repo-root `config.yaml`
+3. optional `MOBIUS_CONFIG_YAML`
+4. targeted CLI overrides such as `--clusters-dir`
 
 If you prefer to keep the diff only in job output, use `møbius diff`. If you want the report directly on the merge request, use `møbius comment`.
 
