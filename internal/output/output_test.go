@@ -36,6 +36,18 @@ func TestRenderCommentBody_NoChanges(t *testing.T) {
 	}
 }
 
+func TestRenderCommentBody_UsesCollapsibleChartSections(t *testing.T) {
+	body, err := RenderCommentBody([]ClusterReport{sampleClusterReport()}, diff.ModeSemantic, NoteMetadata{CommitSHA: "deadbeef"})
+	if err != nil {
+		t.Fatalf("RenderCommentBody returned error: %v", err)
+	}
+
+	want := readGolden(t, "comment_report.golden")
+	if strings.TrimSpace(body) != strings.TrimSpace(want) {
+		t.Fatalf("unexpected comment body:\n%s", body)
+	}
+}
+
 func sampleClusterReport() ClusterReport {
 	change := diff.Change{
 		State: "changed",

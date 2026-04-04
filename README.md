@@ -29,8 +29,8 @@ When a GitLab MR pipeline runs `møbius comment`, it:
 The posted note contains:
 
 - a per-cluster summary table
-- chart and namespace headers
-- resource-level diff sections
+- one collapsible section per chart
+- resource-level diff sections inside each chart section
 - semantic diff snippets that highlight the effective Kubernetes changes
 
 If there are no effective changes, `møbius comment` updates the sticky note to a short no-change message instead of deleting it.
@@ -44,6 +44,7 @@ That gives reviewers:
 - a stable, visible diff directly on the MR instead of only in job logs
 - a report they can quote, reference, and discuss in review threads
 - an updated view on every pipeline run without accumulating multiple bot comments
+- a more compact MR note for larger diffs, with chart details expanded only when needed
 - a clearer picture of the effective cluster change than raw values-file edits alone
 
 The job environment should:
@@ -78,6 +79,8 @@ If you prefer to keep the diff only in job output, use `møbius diff`. If you wa
 ## Sample Report
 
 A sample markdown report is available in [docs/sample-report.md](docs/sample-report.md).
+
+A sample GitLab MR comment with collapsible chart sections is available in [docs/sample-comment.md](docs/sample-comment.md).
 
 `møbius` can render markdown output for copy and paste, or post the same style of report directly into a GitLab merge request as a sticky bot comment.
 

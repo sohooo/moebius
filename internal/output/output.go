@@ -95,15 +95,17 @@ func RenderCommentBody(reports []ClusterReport, mode diff.Mode, meta NoteMetadat
 		return b.String(), nil
 	}
 
-	body, err := RenderReports(reports, mode, cli.OutputFormatMarkdown)
-	if err != nil {
-		return "", err
+	for i, report := range reports {
+		chunk, err := renderClusterComment(report, mode)
+		if err != nil {
+			return "", err
+		}
+		if i > 0 {
+			b.WriteByte('\n')
+		}
+		b.WriteString(strings.TrimRight(chunk, "\n"))
+		b.WriteString("\n\n")
 	}
-	b.WriteString(body)
-	if !strings.HasSuffix(body, "\n") {
-		b.WriteByte('\n')
-	}
-	b.WriteByte('\n')
 	b.WriteString(StickyMarker)
 	return b.String(), nil
 }
@@ -179,6 +181,67 @@ func renderClusterMarkdown(report ClusterReport, mode diff.Mode) (string, error)
 		}
 	}
 	return strings.TrimRight(b.String(), "\n"), nil
+}
+
+func renderClusterComment(report ClusterReport, mode diff.Mode) (string, error) {
+	var b strings.Builder
+	fmt.Fprintf(&b, "## Cluster `%s`\n\n", report.Name)
+	fmt.Fprintln(&b, "| Added | Removed | Changed |")
+	fmt.Fprintln(&b, "| ---: | ---: | ---: |")
+	fmt.Fprintf(&b, "| %d | %d | %d |\n\n", report.Added, report.Removed, report.Changed)
+
+	if len(report.Charts) == 0 {
+		fmt.Fprintln(&b, "_No effective changes._")
+		return strings.TrimRight(b.String(), "\n"), nil
+	}
+
+	fmt.Fprintf(&b, "Charts with changes: %d\n\n", len(report.Charts))
+
+	for _, chart := range report.Charts {
+		added, removed, changed := chartChangeCounts(chart)
+		fmt.Fprintf(&b, "<details>\n<summary>Chart `%s` · namespace `%s` · added %d · removed %d · changed %d</summary>\n\n", chart.Name, emptyToNone(chart.Namespace), added, removed, changed)
+		for _, resource := range chart.Resources {
+			fmt.Fprintf(&b, "#### Resource `%s/%s` (%s)\n\n", resource.Kind, resource.Name, resource.State)
+			semanticMarkdown, err := diff.RenderSemanticMarkdown(resource.Result.Changes)
+			if err != nil || strings.TrimSpace(semanticMarkdown) == "" {
+				semanticMarkdown = resource.Semantic
+			}
+			if (mode == diff.ModeSemantic || mode == diff.ModeBoth) && strings.TrimSpace(semanticMarkdown) != "" {
+				fmt.Fprintln(&b, "```diff")
+				fmt.Fprintln(&b, strings.TrimSpace(semanticMarkdown))
+				fmt.Fprintln(&b, "```")
+				fmt.Fprintln(&b)
+			}
+			if ((mode == diff.ModeRaw || mode == diff.ModeBoth) || (mode == diff.ModeSemantic && strings.TrimSpace(semanticMarkdown) == "")) && strings.TrimSpace(resource.Result.RawDiff) != "" {
+				label := "Raw diff"
+				if mode == diff.ModeRaw {
+					label = "Diff"
+				}
+				fmt.Fprintf(&b, "**%s**\n\n", label)
+				fmt.Fprintln(&b, "```diff")
+				fmt.Fprintln(&b, strings.TrimSpace(resource.Result.RawDiff))
+				fmt.Fprintln(&b, "```")
+				fmt.Fprintln(&b)
+			}
+		}
+		fmt.Fprintln(&b, "</details>")
+		fmt.Fprintln(&b)
+	}
+	return strings.TrimRight(b.String(), "\n"), nil
+}
+
+func chartChangeCounts(chart ChartReport) (added, removed, changed int) {
+	for _, resource := range chart.Resources {
+		switch resource.State {
+		case "added":
+			added++
+		case "removed":
+			removed++
+		default:
+			changed++
+		}
+	}
+	return added, removed, changed
 }
 
 func emptyToNone(v string) string {
