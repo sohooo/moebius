@@ -8,51 +8,72 @@ Its job is to render the effective Helm-based cluster configuration for:
 
 Then it compares both rendered results chart by chart and resource by resource, so reviewers can see what the merge request would actually change in the cluster.
 
-The name comes from *StarCraft*: the Moebius Foundation was a formerly legitimate research group focused on archaeology. It explored sites created by a race older than the protoss, including Research Site KL-2.
+> The name comes from *StarCraft*: the Moebius Foundation was a formerly legitimate research group focused on archaeology. It explored sites created by a race older than the protoss, including Research Site KL-2.
 
-## Quickstart
+## CI Usage
 
-Build the binary:
+`møbius` is designed to run as a separate tool in a GitLab merge request pipeline, typically from the cluster configuration repository. A common production setup is to build and publish the `møbius` image once, then run that image on a Kubernetes GitLab runner.
 
-```bash
-make build
+### What `møbius comment` Does
+
+When a GitLab MR pipeline runs `møbius comment`, it:
+
+1. detects the current merge request from the GitLab CI environment
+2. renders the effective cluster state at the merge-base and at the MR commit
+3. builds a markdown diff report like the sample in [docs/sample-report.md](docs/sample-report.md)
+4. finds the existing `møbius` MR note, if one already exists
+5. creates that note if it does not exist yet
+6. updates the same note on later pipeline runs instead of creating duplicates
+7. leaves the note unchanged if the rendered report body is already up to date
+
+The posted note contains:
+
+- a per-cluster summary table
+- chart and namespace headers
+- resource-level diff sections
+- semantic diff snippets that highlight the effective Kubernetes changes
+
+If there are no effective changes, `møbius comment` updates the sticky note to a short no-change message instead of deleting it.
+
+### Why This Is Useful
+
+Using `møbius comment` in the MR pipeline makes the rendered diff part of the merge request discussion itself.
+
+That gives reviewers:
+
+- a stable, visible diff directly on the MR instead of only in job logs
+- a report they can quote, reference, and discuss in review threads
+- an updated view on every pipeline run without accumulating multiple bot comments
+- a clearer picture of the effective cluster change than raw values-file edits alone
+
+The job environment should:
+
+- fetch enough git history for merge-base calculation
+- make the target branch ref, usually `master`, available locally
+- provide the repository checkout
+- provide `CI_PROJECT_ID`, `CI_MERGE_REQUEST_IID`, and `CI_JOB_TOKEN`
+- provide either `CI_API_V4_URL` or `CI_SERVER_URL`
+- provide network and credentials only if OCI chart access requires them
+
+The repository in which the pipeline runs should include [config.yaml](config.yaml), the cluster definitions, and any referenced local charts.
+
+Example GitLab job:
+
+```yaml
+mobius-diff:
+  stage: test
+  image: registry.example.com/platform/møbius:latest
+  tags:
+    - k8s
+  script:
+    - møbius comment --output-dir .mobius-out
+  artifacts:
+    when: always
+    paths:
+      - .mobius-out/
 ```
 
-Run the standard verification pass:
-
-```bash
-make verify
-```
-
-Render the diff for one cluster:
-
-```bash
-./bin/møbius diff --cluster kube-bravo
-```
-
-Render markdown output that is ready to paste into a merge request:
-
-```bash
-./bin/møbius diff --cluster kube-bravo --output-format markdown
-```
-
-Post or update the sticky merge request comment from a GitLab MR pipeline:
-
-```bash
-./bin/møbius comment
-```
-
-Persist rendered artifacts and diffs:
-
-```bash
-./bin/møbius diff --cluster kube-bravo --output-dir .mobius-out
-```
-
-Build the container image:
-
-```bash
-docker build -t mobius:local .
-```
+If you prefer to keep the diff only in job output, use `møbius diff`. If you want the report directly on the merge request, use `møbius comment`.
 
 ## Sample Report
 
@@ -99,38 +120,49 @@ Artifacts are written per chart and per resource:
 
 The baseline is the git merge-base between `HEAD` and the configured base ref, not the current tip of the target branch.
 
-## CI Usage
+## Quickstart
 
-`møbius` is designed to run as a separate tool in a GitLab merge request pipeline, typically from the cluster configuration repository. A common production setup is to build and publish the `møbius` image once, then run that image on a Kubernetes GitLab runner.
+Build the binary:
 
-The job environment should:
-
-- fetch enough git history for merge-base calculation
-- make the target branch ref, usually `master`, available locally
-- provide the repository checkout
-- provide `CI_PROJECT_ID`, `CI_MERGE_REQUEST_IID`, and `CI_JOB_TOKEN`
-- provide either `CI_API_V4_URL` or `CI_SERVER_URL`
-- provide network and credentials only if OCI chart access requires them
-
-The repository in which the pipeline runs should include [config.yaml](config.yaml), the cluster definitions, and any referenced local charts.
-
-Example GitLab job:
-
-```yaml
-mobius-diff:
-  stage: test
-  image: registry.example.com/platform/møbius:latest
-  tags:
-    - k8s
-  script:
-    - møbius comment --output-dir .mobius-out
-  artifacts:
-    when: always
-    paths:
-      - .mobius-out/
+```bash
+make build
 ```
 
-If you prefer to keep the diff only in job output, use `møbius diff`. If you want the report directly on the merge request, use `møbius comment`.
+Run the standard verification pass:
+
+```bash
+make verify
+```
+
+Render the diff for one cluster:
+
+```bash
+./bin/møbius diff --cluster kube-bravo
+```
+
+Render markdown output that is ready to paste into a merge request:
+
+```bash
+./bin/møbius diff --cluster kube-bravo --output-format markdown
+```
+
+Post or update the sticky merge request comment from a GitLab MR pipeline:
+
+```bash
+./bin/møbius comment
+```
+
+Persist rendered artifacts and diffs:
+
+```bash
+./bin/møbius diff --cluster kube-bravo --output-dir .mobius-out
+```
+
+Build the container image:
+
+```bash
+docker build -t mobius:local .
+```
 
 ## Cluster Layout
 
