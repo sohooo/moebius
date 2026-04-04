@@ -7,18 +7,25 @@ import (
 	"testing"
 )
 
-func TestLoadRepoConfigFailsWhenMissing(t *testing.T) {
-	_, err := LoadRepoConfig(t.TempDir())
-	if err == nil {
-		t.Fatal("expected missing config error")
+func TestLoadRepoConfigUsesDefaultsWhenNoFileOrEnvIsPresent(t *testing.T) {
+	root := t.TempDir()
+	t.Setenv(EnvConfigYAML, "")
+
+	cfg, err := LoadRepoConfig(root)
+	if err != nil {
+		t.Fatalf("LoadRepoConfig returned error: %v", err)
 	}
-	if !strings.Contains(err.Error(), "missing required config file") {
-		t.Fatalf("unexpected error: %v", err)
+	if cfg.Layout.ClustersDir != "clusters" {
+		t.Fatalf("expected default clusters_dir, got %q", cfg.Layout.ClustersDir)
+	}
+	if cfg.Layout.Apps.File != "apps.yaml" {
+		t.Fatalf("expected default apps file, got %q", cfg.Layout.Apps.File)
 	}
 }
 
-func TestLoadRepoConfigAppliesDefaults(t *testing.T) {
+func TestLoadRepoConfigReadsOptionalConfigFile(t *testing.T) {
 	root := t.TempDir()
+	t.Setenv(EnvConfigYAML, "")
 	writeFile(t, filepath.Join(root, "config.yaml"), "layout:\n  clusters_dir: custom-clusters\n")
 
 	cfg, err := LoadRepoConfig(root)
@@ -31,14 +38,52 @@ func TestLoadRepoConfigAppliesDefaults(t *testing.T) {
 	if cfg.Layout.Apps.File != "apps.yaml" {
 		t.Fatalf("expected default apps file, got %q", cfg.Layout.Apps.File)
 	}
-	if cfg.Layout.Overrides.FallbackPath != "overrides/{name}.yaml" {
-		t.Fatalf("expected default fallback path, got %q", cfg.Layout.Overrides.FallbackPath)
+}
+
+func TestLoadRepoConfigReadsEnvYAMLWithoutFile(t *testing.T) {
+	root := t.TempDir()
+	t.Setenv(EnvConfigYAML, "layout:\n  clusters_dir: environments\n")
+
+	cfg, err := LoadRepoConfig(root)
+	if err != nil {
+		t.Fatalf("LoadRepoConfig returned error: %v", err)
+	}
+	if cfg.Layout.ClustersDir != "environments" {
+		t.Fatalf("unexpected clusters_dir: %q", cfg.Layout.ClustersDir)
+	}
+}
+
+func TestLoadRepoConfigEnvOverridesFile(t *testing.T) {
+	root := t.TempDir()
+	writeFile(t, filepath.Join(root, "config.yaml"), "layout:\n  clusters_dir: clusters-from-file\n")
+	t.Setenv(EnvConfigYAML, "layout:\n  clusters_dir: clusters-from-env\n")
+
+	cfg, err := LoadRepoConfig(root)
+	if err != nil {
+		t.Fatalf("LoadRepoConfig returned error: %v", err)
+	}
+	if cfg.Layout.ClustersDir != "clusters-from-env" {
+		t.Fatalf("unexpected clusters_dir: %q", cfg.Layout.ClustersDir)
+	}
+}
+
+func TestLoadRepoConfigRejectsInvalidEnvYAML(t *testing.T) {
+	root := t.TempDir()
+	t.Setenv(EnvConfigYAML, "layout: [")
+
+	_, err := LoadRepoConfig(root)
+	if err == nil {
+		t.Fatal("expected env parse error")
+	}
+	if !strings.Contains(err.Error(), EnvConfigYAML) {
+		t.Fatalf("unexpected error: %v", err)
 	}
 }
 
 func TestLoadRepoConfigRejectsUnknownPlaceholder(t *testing.T) {
 	root := t.TempDir()
 	writeFile(t, filepath.Join(root, "config.yaml"), "layout:\n  overrides:\n    path: overrides/{team}/{name}.yaml\n")
+	t.Setenv(EnvConfigYAML, "")
 
 	_, err := LoadRepoConfig(root)
 	if err == nil {
@@ -52,6 +97,7 @@ func TestLoadRepoConfigRejectsUnknownPlaceholder(t *testing.T) {
 func TestLoadRepoConfigRejectsUnknownRequiredField(t *testing.T) {
 	root := t.TempDir()
 	writeFile(t, filepath.Join(root, "config.yaml"), "layout:\n  apps:\n    required:\n      - release_name\n")
+	t.Setenv(EnvConfigYAML, "")
 
 	_, err := LoadRepoConfig(root)
 	if err == nil {

@@ -11,6 +11,8 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
+const EnvConfigYAML = "MOBIUS_CONFIG_YAML"
+
 var placeholderPattern = regexp.MustCompile(`\{([^{}]+)\}`)
 
 var canonicalFields = []string{"name", "namespace", "project", "chart", "version"}
@@ -78,21 +80,25 @@ func Default() RepoConfig {
 }
 
 func LoadRepoConfig(root string) (RepoConfig, error) {
-	path := filepath.Join(root, "config.yaml")
-	data, err := os.ReadFile(path)
-	if err != nil {
-		if os.IsNotExist(err) {
-			return RepoConfig{}, fmt.Errorf("missing required config file %s", path)
+	cfg := Default()
+
+	filePath := filepath.Join(root, "config.yaml")
+	if data, err := os.ReadFile(filePath); err == nil {
+		if err := yaml.Unmarshal(data, &cfg); err != nil {
+			return RepoConfig{}, fmt.Errorf("parse %s: %w", filePath, err)
 		}
-		return RepoConfig{}, fmt.Errorf("read %s: %w", path, err)
+	} else if !os.IsNotExist(err) {
+		return RepoConfig{}, fmt.Errorf("read %s: %w", filePath, err)
 	}
 
-	cfg := Default()
-	if err := yaml.Unmarshal(data, &cfg); err != nil {
-		return RepoConfig{}, fmt.Errorf("parse %s: %w", path, err)
+	if envConfig := os.Getenv(EnvConfigYAML); envConfig != "" {
+		if err := yaml.Unmarshal([]byte(envConfig), &cfg); err != nil {
+			return RepoConfig{}, fmt.Errorf("parse %s: %w", EnvConfigYAML, err)
+		}
 	}
+
 	if err := cfg.Validate(); err != nil {
-		return RepoConfig{}, fmt.Errorf("invalid %s: %w", path, err)
+		return RepoConfig{}, err
 	}
 	return cfg, nil
 }

@@ -56,7 +56,9 @@ The job environment should:
 - provide either `CI_API_V4_URL` or `CI_SERVER_URL`
 - provide network and credentials only if OCI chart access requires them
 
-The repository in which the pipeline runs should include [config.yaml](config.yaml), the cluster definitions, and any referenced local charts.
+The repository in which the pipeline runs should include the cluster definitions and any referenced local charts. Layout configuration can come from built-in defaults, an optional repo-root [config.yaml](config.yaml), or the `MOBIUS_CONFIG_YAML` environment variable.
+
+For repositories that already use the default layout, the pipeline only needs to reference the `møbius` image.
 
 Example GitLab job:
 
@@ -66,6 +68,37 @@ mobius-diff:
   image: registry.example.com/platform/møbius:latest
   tags:
     - k8s
+  script:
+    - møbius comment --output-dir .mobius-out
+  artifacts:
+    when: always
+    paths:
+      - .mobius-out/
+```
+
+Example GitLab job with a custom layout supplied entirely through CI:
+
+```yaml
+mobius-diff:
+  stage: test
+  image: registry.example.com/platform/møbius:latest
+  tags:
+    - k8s
+  variables:
+    MOBIUS_CONFIG_YAML: |
+      layout:
+        clusters_dir: environments
+        apps:
+          file: releases.yaml
+          fields:
+            name: release_name
+            namespace: target_namespace
+            project: argocd_project
+            chart: chart_ref
+            version: chart_version
+        overrides:
+          path: values/{project}/{name}.yaml
+          fallback_path: values/{name}.yaml
   script:
     - møbius comment --output-dir .mobius-out
   artifacts:
@@ -88,7 +121,7 @@ A sample GitLab MR comment with collapsible chart sections is available in [docs
 
 For each selected cluster, `møbius`:
 
-1. reads [config.yaml](config.yaml) from the repository root
+1. loads layout configuration from built-in defaults, optional [config.yaml](config.yaml), optional `MOBIUS_CONFIG_YAML`, and targeted CLI overrides
 2. resolves the merge-base with the configured base ref
 3. loads the configured apps file for each cluster
 4. renders each release with the Helm Go SDK
@@ -185,9 +218,9 @@ The demo repository also contains a sample chart under [charts/hello-world](char
 
 ## Repository Config
 
-`møbius` requires a root-level [config.yaml](config.yaml).
+`møbius` supports an optional repo-root [config.yaml](config.yaml).
 
-It defines:
+It uses the same schema as `MOBIUS_CONFIG_YAML` and can define:
 
 - the cluster root directory
 - the apps file name inside each cluster
@@ -195,7 +228,14 @@ It defines:
 - which canonical fields are required
 - the primary and fallback override path patterns
 
-The apps file is expected to be a top-level YAML list of release objects. `møbius` does not support nested release extraction, arbitrary YAML queries, or custom templating rules in `config.yaml`.
+The apps file is expected to be a top-level YAML list of release objects. `møbius` does not support nested release extraction, arbitrary YAML queries, or custom templating rules in layout config.
+
+Layout precedence is:
+
+1. built-in defaults
+2. optional repo-root `config.yaml`
+3. optional `MOBIUS_CONFIG_YAML`
+4. targeted CLI overrides such as `--clusters-dir`
 
 Example field remapping:
 
@@ -210,13 +250,13 @@ layout:
       version: chart_version
 ```
 
-`--clusters-dir` is available as an explicit override for `layout.clusters_dir`.
+`config.yaml` works well for repo-owned local conventions. `MOBIUS_CONFIG_YAML` works well for decoupled containerized CI usage. `--clusters-dir` remains available as an explicit override for `layout.clusters_dir`.
 
 ## CLI Reference
 
 | Flag | Meaning | Default / Notes |
 | --- | --- | --- |
-| `--clusters-dir PATH` | Override the cluster root directory from `config.yaml` | No override |
+| `--clusters-dir PATH` | Override the cluster root directory from layout config | No override |
 | `--base-ref REF` | Base ref used for merge-base comparison | `master` |
 | `--cluster NAME` | Render and compare one specific cluster | Optional |
 | `--all-clusters` | Render and compare all clusters | Optional |
