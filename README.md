@@ -48,6 +48,12 @@ Persist rendered artifacts and diffs:
 ./bin/møbius diff --cluster kube-bravo --output-dir .mobius-out
 ```
 
+Build the container image:
+
+```bash
+docker build -t mobius:local .
+```
+
 ## Sample Report
 
 A sample markdown report is available in [docs/sample-report.md](docs/sample-report.md).
@@ -95,7 +101,7 @@ The baseline is the git merge-base between `HEAD` and the configured base ref, n
 
 ## CI Usage
 
-`møbius` is designed for GitLab merge request pipelines.
+`møbius` is designed to run as a separate tool in a GitLab merge request pipeline, typically from the cluster configuration repository. A common production setup is to build and publish the `møbius` image once, then run that image on a Kubernetes GitLab runner.
 
 The job environment should:
 
@@ -106,21 +112,25 @@ The job environment should:
 - provide either `CI_API_V4_URL` or `CI_SERVER_URL`
 - provide network and credentials only if OCI chart access requires them
 
+The repository in which the pipeline runs should include [config.yaml](config.yaml), the cluster definitions, and any referenced local charts.
+
 Example GitLab job:
 
 ```yaml
 mobius-diff:
   stage: test
-  image: golang:1.25
-  before_script:
-    - make build
+  image: registry.example.com/platform/møbius:latest
+  tags:
+    - k8s
   script:
-    - ./bin/møbius comment --output-dir .mobius-out
+    - møbius comment --output-dir .mobius-out
   artifacts:
     when: always
     paths:
       - .mobius-out/
 ```
+
+If you prefer to keep the diff only in job output, use `møbius diff`. If you want the report directly on the merge request, use `møbius comment`.
 
 ## Cluster Layout
 
@@ -197,3 +207,5 @@ It is self-contained at runtime and uses Go libraries for:
 - raw unified diffs and semantic YAML diffs
 
 `bin/møbius` is a generated build artifact and is ignored in Git.
+
+The repository also includes a [Dockerfile](Dockerfile) for building a small runtime image that contains only the compiled `møbius` binary and CA certificates.
