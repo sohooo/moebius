@@ -24,6 +24,12 @@ func Build(opts cli.Options) ([]output.ClusterReport, string, error) {
 	if err != nil {
 		return nil, "", err
 	}
+	repoConfig, err := config.LoadRepoConfig(repo.Root())
+	if err != nil {
+		return nil, "", err
+	}
+	layout := repoConfig.Layout
+	layout.ClustersDir = repoConfig.EffectiveClustersDir(opts.ClustersDir)
 	head, err := repo.ResolveCommit("HEAD")
 	if err != nil {
 		return nil, "", err
@@ -37,7 +43,7 @@ func Build(opts cli.Options) ([]output.ClusterReport, string, error) {
 		return nil, "", err
 	}
 
-	clusters, err := selectClusters(repo, opts, mergeBase, head)
+	clusters, err := selectClusters(repo, layout, opts, mergeBase, head)
 	if err != nil {
 		return nil, "", err
 	}
@@ -83,8 +89,8 @@ func Build(opts cli.Options) ([]output.ClusterReport, string, error) {
 
 	var reports []output.ClusterReport
 	for _, cluster := range clusters {
-		currentExists := fileExists(filepath.Join(repo.Root(), opts.ClustersDir, cluster, "apps.yaml"))
-		baselineExists, err := repo.PathExistsAtCommit(mergeBase, filepath.ToSlash(filepath.Join(opts.ClustersDir, cluster, "apps.yaml")))
+		currentExists := fileExists(config.AppsPath(repo.Root(), layout, cluster))
+		baselineExists, err := repo.PathExistsAtCommit(mergeBase, filepath.ToSlash(filepath.Join(layout.ClustersDir, cluster, layout.Apps.File)))
 		if err != nil {
 			return nil, "", err
 		}
@@ -92,13 +98,13 @@ func Build(opts cli.Options) ([]output.ClusterReport, string, error) {
 			return nil, "", fmt.Errorf("cluster %q does not exist in current worktree or at merge-base", cluster)
 		}
 
-		if err := prepareBaselineCluster(repo, mergeBase, opts.ClustersDir, cluster, baselineRoot); err != nil {
+		if err := prepareBaselineCluster(repo, mergeBase, layout, cluster, baselineRoot); err != nil {
 			return nil, "", err
 		}
-		if err := renderCluster(repo.Root(), opts.ClustersDir, cluster, currentOutput, renderer); err != nil {
+		if err := renderCluster(repo.Root(), layout, cluster, currentOutput, renderer); err != nil {
 			return nil, "", err
 		}
-		if err := renderCluster(baselineRoot, opts.ClustersDir, cluster, baselineOutput, renderer); err != nil {
+		if err := renderCluster(baselineRoot, layout, cluster, baselineOutput, renderer); err != nil {
 			return nil, "", err
 		}
 
@@ -112,20 +118,20 @@ func Build(opts cli.Options) ([]output.ClusterReport, string, error) {
 	return reports, outputDir, nil
 }
 
-func selectClusters(repo *gitrepo.Repo, opts cli.Options, mergeBase, head *object.Commit) ([]string, error) {
+func selectClusters(repo *gitrepo.Repo, layout config.LayoutConfig, opts cli.Options, mergeBase, head *object.Commit) ([]string, error) {
 	switch {
 	case opts.Cluster != "":
 		return []string{opts.Cluster}, nil
 	case opts.AllClusters:
-		return repo.AllClusters(opts.ClustersDir)
+		return repo.AllClusters(layout.ClustersDir)
 	default:
-		return repo.ChangedClusters(opts.ClustersDir, mergeBase, head)
+		return repo.ChangedClusters(layout.ClustersDir, mergeBase, head)
 	}
 }
 
-func prepareBaselineCluster(repo *gitrepo.Repo, mergeBase *object.Commit, clustersDir, cluster, baselineRoot string) error {
-	appsRel := filepath.ToSlash(filepath.Join(clustersDir, cluster, "apps.yaml"))
-	exists, err := repo.PathExistsAtCommit(mergeBase, appsRel)
+func prepareBaselineCluster(repo *gitrepo.Repo, mergeBase *object.Commit, layout config.LayoutConfig, cluster, baselineRoot string) error {
+	clusterRel := filepath.ToSlash(filepath.Join(layout.ClustersDir, cluster))
+	exists, err := repo.PathExistsAtCommit(mergeBase, clusterRel)
 	if err != nil {
 		return err
 	}
@@ -133,19 +139,11 @@ func prepareBaselineCluster(repo *gitrepo.Repo, mergeBase *object.Commit, cluste
 		return nil
 	}
 
-	if err := repo.WriteFileAtCommit(mergeBase, appsRel, baselineRoot); err != nil {
-		return err
-	}
-	overridePrefix := filepath.ToSlash(filepath.Join(clustersDir, cluster, "overrides"))
-	if exists, err := repo.PathExistsAtCommit(mergeBase, overridePrefix); err == nil && exists {
-		if err := repo.WriteDirAtCommit(mergeBase, overridePrefix, baselineRoot); err != nil {
-			return err
-		}
-	} else if err != nil {
+	if err := repo.WriteDirAtCommit(mergeBase, clusterRel, baselineRoot); err != nil {
 		return err
 	}
 
-	releases, err := config.LoadReleases(baselineRoot, clustersDir, cluster)
+	releases, err := config.LoadReleases(baselineRoot, layout, cluster)
 	if err != nil {
 		return err
 	}
@@ -169,12 +167,12 @@ func prepareBaselineCluster(repo *gitrepo.Repo, mergeBase *object.Commit, cluste
 	return nil
 }
 
-func renderCluster(root, clustersDir, cluster, outputRoot string, renderer *helmrender.Renderer) error {
-	appsPath := filepath.Join(root, clustersDir, cluster, "apps.yaml")
+func renderCluster(root string, layout config.LayoutConfig, cluster, outputRoot string, renderer *helmrender.Renderer) error {
+	appsPath := config.AppsPath(root, layout, cluster)
 	if !fileExists(appsPath) {
 		return nil
 	}
-	releases, err := config.LoadReleases(root, clustersDir, cluster)
+	releases, err := config.LoadReleases(root, layout, cluster)
 	if err != nil {
 		return err
 	}
@@ -184,7 +182,7 @@ func renderCluster(root, clustersDir, cluster, outputRoot string, renderer *helm
 	}
 
 	for _, release := range releases {
-		overridePath := config.OverridePath(root, clustersDir, cluster, release.Project, release.Name)
+		overridePath := config.ResolveOverridePath(root, layout, cluster, release)
 		if !fileExists(overridePath) {
 			overridePath = ""
 		}

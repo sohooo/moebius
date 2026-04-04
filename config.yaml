@@ -1,0 +1,35 @@
+# Repository layout configuration for møbius.
+# All paths are relative to the repository root unless noted otherwise.
+layout:
+  # Directory containing one folder per cluster.
+  clusters_dir: clusters
+
+  apps:
+    # File name inside each cluster directory that defines releases.
+    file: apps.yaml
+
+    # møbius currently expects this file to be a top-level YAML list of objects.
+    kind: list
+
+    fields:
+      # Key names used inside each release entry.
+      name: name
+      namespace: namespace
+      project: project
+      chart: chart
+      version: version
+
+    required:
+      # Canonical fields that must be present in each release entry.
+      # Valid values are: name, namespace, project, chart, version
+      - name
+      - namespace
+      - chart
+
+  overrides:
+    # Primary override file path, relative to the cluster directory.
+    # Available placeholders: {cluster}, {project}, {name}
+    path: overrides/{project}/{name}.yaml
+
+    # Optional compatibility fallback checked if the primary path does not exist.
+    fallback_path: overrides/{name}.yaml

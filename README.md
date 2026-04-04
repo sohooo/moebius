@@ -17,9 +17,38 @@ Its job is to:
 
 This gives reviewers a concrete view of what a merge request would actually change in the cluster instead of only showing raw YAML or values file edits.
 
+## Repository Config
+
+`møbius` now requires a root-level [config.yaml](/Users/sven/Code/lab/møbius/config.yaml). It describes the repository layout that `møbius` should expect.
+
+In v1, `config.yaml` can configure:
+
+- the cluster root directory
+- the apps file name inside each cluster
+- the field names used inside each release entry in the apps file
+- which canonical fields are required
+- the primary and fallback override path patterns
+
+The apps file is still expected to be a top-level YAML list of release objects. V1 does not support nested release extraction, arbitrary YAML queries, or custom templating logic.
+
+Example of a custom field-name mapping:
+
+```yaml
+layout:
+  apps:
+    fields:
+      name: release_name
+      namespace: target_namespace
+      project: argocd_project
+      chart: chart_ref
+      version: chart_version
+```
+
+`--clusters-dir` is still available as an explicit CLI override for the configured cluster root.
+
 ## Cluster Layout
 
-Cluster definitions live under `clusters/`.
+By default, cluster definitions live under `clusters/`.
 
 - `clusters/<cluster>/apps.yaml` lists the Helm releases for that cluster
 - each release entry must include `project: <project-name>`
@@ -91,7 +120,7 @@ Persist rendered artifacts and diff outputs:
 
 Available flags:
 
-- `--clusters-dir PATH` default `clusters`
+- `--clusters-dir PATH` override `layout.clusters_dir` from `config.yaml`
 - `--base-ref REF` default `master`
 - `--cluster NAME` force a single cluster
 - `--all-clusters` process every cluster under `clusters/`
@@ -110,17 +139,18 @@ If the sticky note body is already up to date, `møbius` leaves it unchanged ins
 
 For each selected cluster, `møbius`:
 
-1. reads `clusters/<cluster>/apps.yaml`
+1. reads `config.yaml` from the repository root
 2. resolves the merge-base with the configured base ref using native Git handling
-3. renders every release in that file with the Helm Go SDK
-4. applies `clusters/<cluster>/overrides/<project>/<name>.yaml` if it exists
-5. writes one manifest per release:
+3. reads the configured apps file for each selected cluster
+4. renders every release in that file with the Helm Go SDK
+5. applies the configured override path if it exists
+6. writes one manifest per release:
    - `current/<cluster>/<chart-name>/rendered.yaml`
    - `current/<cluster>/<chart-name>/resources/<kind>--<namespace-or-cluster>--<name>.yaml`
    - `baseline/<cluster>/<chart-name>/resources/<kind>--<namespace-or-cluster>--<name>.yaml`
    - `diff/<cluster>/<chart-name>/<resource-key>.diff`
    - `diff/<cluster>/<chart-name>/<resource-key>.semantic.txt`
-6. prints diffs grouped by cluster, chart, and resource
+7. prints diffs grouped by cluster, chart, and resource
 
 Console output includes:
 

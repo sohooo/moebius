@@ -42,7 +42,6 @@ type Options struct {
 
 func Parse(args []string, stdout io.Writer) (Options, error) {
 	var opts Options
-	opts.ClustersDir = "clusters"
 	opts.BaseRef = "master"
 	opts.ContextLines = 3
 	opts.DiffMode = DiffModeSemantic
@@ -50,7 +49,7 @@ func Parse(args []string, stdout io.Writer) (Options, error) {
 
 	fs := flag.NewFlagSet("møbius", flag.ContinueOnError)
 	fs.SetOutput(stdout)
-	fs.StringVar(&opts.ClustersDir, "clusters-dir", opts.ClustersDir, "Cluster definitions directory")
+	fs.StringVar(&opts.ClustersDir, "clusters-dir", opts.ClustersDir, "Override cluster definitions directory from config.yaml")
 	fs.StringVar(&opts.BaseRef, "base-ref", opts.BaseRef, "Base ref used for merge-base")
 	fs.StringVar(&opts.Cluster, "cluster", "", "Render and compare a single cluster")
 	fs.BoolVar(&opts.AllClusters, "all-clusters", false, "Render and compare all clusters")
