@@ -2,7 +2,7 @@
 
 | Added | Removed | Changed |
 | ---: | ---: | ---: |
-| 0 | 0 | 1 |
+| 0 | 0 | 2 |
 
 ### Chart `hello-world`
 
@@ -17,3 +17,13 @@ spec:
 +     replicas: 3
 ```
 
+#### Resource `ClusterRole/hello-world` (changed)
+
+```diff
+# Path: rules (changed)
+- rules:
+-     - get
++ rules:
++     - get
++     - list
+```

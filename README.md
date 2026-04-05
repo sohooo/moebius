@@ -50,8 +50,11 @@ When a GitLab MR pipeline runs `møbius comment`, it:
 
 The posted note contains:
 
+- a top-level review summary with total counts
+- short highlights for notable changes
 - a per-cluster summary table
 - one collapsible section per chart
+- compact chart summaries with counts, kinds, and notable changes
 - resource-level diff sections inside each chart section
 - semantic diff snippets that highlight the effective Kubernetes changes
 
@@ -68,6 +71,8 @@ That gives reviewers:
 - an updated view on every pipeline run without accumulating multiple bot comments
 - a more compact MR note for larger diffs, with chart details expanded only when needed
 - a clearer picture of the effective cluster change than raw values-file edits alone
+
+For very large reports, `møbius` can automatically fall back to a compact summary note and point reviewers to the pipeline artifacts for the full details.
 
 ### Configuration
 
@@ -308,6 +313,11 @@ layout:
 | `--gitlab-base-url` | Override GitLab API base URL for `comment` mode | `CI_API_V4_URL` or `CI_SERVER_URL` |
 
 The `comment` subcommand always renders markdown internally and updates a single sticky MR note. If the note body is already current, it leaves the note unchanged.
+
+`comment` also supports:
+
+- `--comment-mode full|summary|summary+artifacts`
+- `--max-comment-bytes N` to trigger compact fallback for very large notes
 
 ## Implementation Notes
 

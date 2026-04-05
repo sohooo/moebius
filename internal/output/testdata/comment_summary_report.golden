@@ -36,30 +36,10 @@ Charts with changes: 1
   - `ClusterRole/hello-world`: risk: ClusterRole changed
   - `Deployment/hello-world`: replicas changed 2 -> 3
 
-#### Resource `ClusterRole/hello-world` (changed)
-
-```diff
-# Path: rules (changed)
-- rules:
--     - get
-+ rules:
-+     - get
-+     - list
-```
-
-#### Resource `Deployment/hello-world` (changed)
-
-```diff
-# Path: spec.replicas (changed)
-spec:
--     replicas: 2
-+     replicas: 3
-```
-
 </details>
 
 ---
 
-_Report compares merge-base and current MR state._
+_Summary mode. Full resource diffs are omitted from this MR note._
 
 <!-- mobius:mr-diff -->

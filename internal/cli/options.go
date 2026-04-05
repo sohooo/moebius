@@ -10,6 +10,7 @@ import (
 
 type Command string
 type DiffMode string
+type CommentMode string
 type OutputFormat string
 
 const (
@@ -20,20 +21,26 @@ const (
 	DiffModeSemantic DiffMode = "semantic"
 	DiffModeBoth     DiffMode = "both"
 
+	CommentModeFull             CommentMode = "full"
+	CommentModeSummary          CommentMode = "summary"
+	CommentModeSummaryArtifacts CommentMode = "summary+artifacts"
+
 	OutputFormatPlain    OutputFormat = "plain"
 	OutputFormatMarkdown OutputFormat = "markdown"
 )
 
 type Options struct {
-	Command      Command
-	ClustersDir  string
-	BaseRef      string
-	Cluster      string
-	AllClusters  bool
-	OutputDir    string
-	ContextLines int
-	DiffMode     DiffMode
-	OutputFormat OutputFormat
+	Command         Command
+	ClustersDir     string
+	BaseRef         string
+	Cluster         string
+	AllClusters     bool
+	OutputDir       string
+	ContextLines    int
+	DiffMode        DiffMode
+	CommentMode     CommentMode
+	MaxCommentBytes int
+	OutputFormat    OutputFormat
 
 	ProjectID       string
 	MergeRequestIID string
@@ -45,6 +52,8 @@ func Parse(args []string, stdout io.Writer) (Options, error) {
 	opts.BaseRef = "master"
 	opts.ContextLines = 3
 	opts.DiffMode = DiffModeSemantic
+	opts.CommentMode = CommentModeFull
+	opts.MaxCommentBytes = 50000
 	opts.OutputFormat = OutputFormatPlain
 
 	fs := flag.NewFlagSet("møbius", flag.ContinueOnError)
@@ -55,6 +64,7 @@ func Parse(args []string, stdout io.Writer) (Options, error) {
 	fs.BoolVar(&opts.AllClusters, "all-clusters", false, "Render and compare all clusters")
 	fs.StringVar(&opts.OutputDir, "output-dir", "", "Persist rendered artifacts and diffs under PATH")
 	fs.IntVar(&opts.ContextLines, "context-lines", opts.ContextLines, "Unified diff context lines")
+	fs.IntVar(&opts.MaxCommentBytes, "max-comment-bytes", opts.MaxCommentBytes, "Maximum GitLab comment body size before fallback to a compact summary")
 	fs.StringVar(&opts.ProjectID, "project-id", "", "GitLab project ID override for comment mode")
 	fs.StringVar(&opts.MergeRequestIID, "mr-iid", "", "GitLab merge request IID override for comment mode")
 	fs.StringVar(&opts.GitLabBaseURL, "gitlab-base-url", "", "GitLab API base URL override for comment mode")
@@ -74,6 +84,15 @@ func Parse(args []string, stdout io.Writer) (Options, error) {
 			return nil
 		default:
 			return fmt.Errorf("invalid output format %q", v)
+		}
+	})
+	fs.Func("comment-mode", "Comment mode: full, summary, or summary+artifacts", func(v string) error {
+		switch CommentMode(v) {
+		case CommentModeFull, CommentModeSummary, CommentModeSummaryArtifacts:
+			opts.CommentMode = CommentMode(v)
+			return nil
+		default:
+			return fmt.Errorf("invalid comment mode %q", v)
 		}
 	})
 
@@ -102,6 +121,9 @@ func Parse(args []string, stdout io.Writer) (Options, error) {
 	}
 	if opts.ContextLines < 0 {
 		return opts, errors.New("--context-lines must be >= 0")
+	}
+	if opts.MaxCommentBytes < 1024 {
+		return opts, errors.New("--max-comment-bytes must be >= 1024")
 	}
 	if opts.Command == CommandComment {
 		opts.OutputFormat = OutputFormatMarkdown

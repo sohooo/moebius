@@ -37,7 +37,7 @@ func TestRenderCommentBody_NoChanges(t *testing.T) {
 }
 
 func TestRenderCommentBody_UsesCollapsibleChartSections(t *testing.T) {
-	body, err := RenderCommentBody([]ClusterReport{sampleClusterReport()}, diff.ModeSemantic, NoteMetadata{CommitSHA: "deadbeef"})
+	body, err := RenderCommentBody([]ClusterReport{sampleClusterReport()}, diff.ModeSemantic, NoteMetadata{CommitSHA: "deadbeef", BaseRef: "master", DiffMode: "semantic", GeneratedAt: "2026-04-05T12:00:00Z"})
 	if err != nil {
 		t.Fatalf("RenderCommentBody returned error: %v", err)
 	}
@@ -45,6 +45,23 @@ func TestRenderCommentBody_UsesCollapsibleChartSections(t *testing.T) {
 	want := readGolden(t, "comment_report.golden")
 	if strings.TrimSpace(body) != strings.TrimSpace(want) {
 		t.Fatalf("unexpected comment body:\n%s", body)
+	}
+}
+
+func TestRenderCommentBody_SummaryMode(t *testing.T) {
+	body, err := RenderCommentBodyWithOptions([]ClusterReport{sampleClusterReport()}, diff.ModeSemantic, NoteMetadata{
+		CommitSHA:   "deadbeef",
+		BaseRef:     "master",
+		DiffMode:    "semantic",
+		GeneratedAt: "2026-04-05T12:00:00Z",
+	}, NoteRenderOptions{Mode: cli.CommentModeSummary, Status: "changes detected"})
+	if err != nil {
+		t.Fatalf("RenderCommentBodyWithOptions returned error: %v", err)
+	}
+
+	want := readGolden(t, "comment_summary_report.golden")
+	if strings.TrimSpace(body) != strings.TrimSpace(want) {
+		t.Fatalf("unexpected summary comment body:\n%s", body)
 	}
 }
 
@@ -74,7 +91,7 @@ func sampleClusterReport() ClusterReport {
 		Name:    "kube-bravo",
 		Added:   0,
 		Removed: 0,
-		Changed: 1,
+		Changed: 2,
 		Charts: []ChartReport{
 			{
 				Name:      "hello-world",
@@ -85,6 +102,20 @@ func sampleClusterReport() ClusterReport {
 						Kind:   "Deployment",
 						Name:   "hello-world",
 						Result: result,
+					},
+					{
+						State: "changed",
+						Kind:  "ClusterRole",
+						Name:  "hello-world",
+						Result: diff.Result{
+							HasChanges: true,
+							Changes: []diff.Change{{
+								State: "changed",
+								Path:  []diff.Segment{{Key: "rules"}},
+								Old:   []interface{}{"get"},
+								New:   []interface{}{"get", "list"},
+							}},
+						},
 					},
 				},
 			},

@@ -52,10 +52,29 @@ func (s *Service) Post(ctx context.Context, opts cli.Options, reports []output.C
 		PipelineURL: os.Getenv("CI_PIPELINE_URL"),
 		JobURL:      os.Getenv("CI_JOB_URL"),
 		CommitSHA:   os.Getenv("CI_COMMIT_SHA"),
+		BaseRef:     opts.BaseRef,
+		DiffMode:    string(opts.DiffMode),
 	}
-	body, err := output.RenderCommentBody(reports, diff.Mode(opts.DiffMode), meta)
+	renderOpts := output.NoteRenderOptions{
+		Mode:   opts.CommentMode,
+		Status: commentStatus(reports),
+	}
+	body, err := output.RenderCommentBodyWithOptions(reports, diff.Mode(opts.DiffMode), meta, renderOpts)
 	if err != nil {
 		return Result{}, err
+	}
+	maxCommentBytes := opts.MaxCommentBytes
+	if maxCommentBytes <= 0 {
+		maxCommentBytes = 50000
+	}
+	if len(body) > maxCommentBytes {
+		renderOpts.Mode = cli.CommentModeSummaryArtifacts
+		renderOpts.IncludeArtifactsHint = true
+		renderOpts.Status = "report truncated"
+		body, err = output.RenderCommentBodyWithOptions(reports, diff.Mode(opts.DiffMode), meta, renderOpts)
+		if err != nil {
+			return Result{}, err
+		}
 	}
 
 	notes, err := client.ListMergeRequestNotes(ctx, target.ProjectID, target.MergeRequestIID)
@@ -92,4 +111,11 @@ func (s *Service) Post(ctx context.Context, opts cli.Options, reports []output.C
 
 func normalizeNoteBody(body string) string {
 	return strings.TrimSpace(strings.ReplaceAll(body, "\r\n", "\n"))
+}
+
+func commentStatus(reports []output.ClusterReport) string {
+	if len(reports) == 0 {
+		return "no effective changes"
+	}
+	return "changes detected"
 }
