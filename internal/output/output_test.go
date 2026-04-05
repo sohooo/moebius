@@ -8,6 +8,7 @@ import (
 
 	"mobius/internal/cli"
 	"mobius/internal/diff"
+	"mobius/internal/severity"
 )
 
 func TestRenderReports_Markdown(t *testing.T) {
@@ -98,15 +99,18 @@ func sampleClusterReport() ClusterReport {
 				Namespace: "demo",
 				Resources: []ResourceReport{
 					{
-						State:  "changed",
-						Kind:   "Deployment",
-						Name:   "hello-world",
-						Result: result,
+						State:      "changed",
+						Kind:       "Deployment",
+						Name:       "hello-world",
+						Namespace:  "demo",
+						Result:     result,
+						Assessment: severity.Assess(severity.Input{Kind: "Deployment", Name: "hello-world", Namespace: "demo", State: "changed", Changes: result.Changes}),
 					},
 					{
-						State: "changed",
-						Kind:  "ClusterRole",
-						Name:  "hello-world",
+						State:     "changed",
+						Kind:      "ClusterRole",
+						Name:      "hello-world",
+						Namespace: "",
 						Result: diff.Result{
 							HasChanges: true,
 							Changes: []diff.Change{{
@@ -116,6 +120,12 @@ func sampleClusterReport() ClusterReport {
 								New:   []interface{}{"get", "list"},
 							}},
 						},
+						Assessment: severity.Assess(severity.Input{
+							Kind:    "ClusterRole",
+							Name:    "hello-world",
+							State:   "changed",
+							Changes: []diff.Change{{State: "changed", Path: []diff.Segment{{Key: "rules"}}, Old: []interface{}{"get"}, New: []interface{}{"get", "list"}}},
+						}),
 					},
 				},
 			},

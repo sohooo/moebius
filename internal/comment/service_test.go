@@ -9,6 +9,7 @@ import (
 	"mobius/internal/diff"
 	"mobius/internal/gitlab"
 	"mobius/internal/output"
+	"mobius/internal/severity"
 )
 
 func TestServicePost_CreatesNoteWhenMissing(t *testing.T) {
@@ -156,10 +157,12 @@ func sampleReports() []output.ClusterReport {
 					Namespace: "demo",
 					Resources: []output.ResourceReport{
 						{
-							State:  "changed",
-							Kind:   "Deployment",
-							Name:   "hello-world",
-							Result: outputSampleResult(),
+							State:      "changed",
+							Kind:       "Deployment",
+							Name:       "hello-world",
+							Namespace:  "demo",
+							Result:     outputSampleResult(),
+							Assessment: severity.Assess(severity.Input{Kind: "Deployment", Name: "hello-world", Namespace: "demo", State: "changed", Changes: outputSampleResult().Changes}),
 						},
 					},
 				},

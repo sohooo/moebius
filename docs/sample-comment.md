@@ -10,9 +10,11 @@ Commit: `deadbeef`
 | ---: | ---: | ---: | ---: | ---: | ---: |
 | 1 | 1 | 1 | 0 | 0 | 1 |
 
+**Severity:** high 1
+
 **Highlights**
 
-- `Deployment/hello-world`: replicas changed 2 -> 3
+- Cluster `kube-bravo` · `Deployment/hello-world` [high]: replicas changed 2 -> 3
 
 ## Cluster `kube-bravo`
 
@@ -23,14 +25,17 @@ Commit: `deadbeef`
 Charts with changes: 1
 
 <details>
-<summary>Chart `hello-world` · namespace `hello-world` · added 0 · removed 0 · changed 1</summary>
+<summary>Chart `hello-world` · namespace `hello-world` · severity `high` · added 0 · removed 0 · changed 1</summary>
 
 - Kinds affected: Deployment
 - Scope: value-level tweaks only
+- Severity summary: high 1
 - Notable changes:
-  - `Deployment/hello-world`: replicas changed 2 -> 3
+  - `Deployment/hello-world` [high]: replicas changed 2 -> 3
 
-#### Resource `Deployment/hello-world` (changed)
+#### Resource `Deployment/hello-world` (changed, severity: high)
+
+- replicas changed 2 -> 3
 
 ```diff
 # Path: spec.replicas (changed)

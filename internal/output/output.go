@@ -9,16 +9,19 @@ import (
 
 	"mobius/internal/cli"
 	"mobius/internal/diff"
+	"mobius/internal/severity"
 )
 
 const StickyMarker = "<!-- mobius:mr-diff -->"
 
 type ResourceReport struct {
-	State    string
-	Kind     string
-	Name     string
-	Result   diff.Result
-	Semantic string
+	State      string
+	Kind       string
+	Name       string
+	Namespace  string
+	Result     diff.Result
+	Semantic   string
+	Assessment severity.Assessment
 }
 
 type ChartReport struct {
@@ -156,7 +159,13 @@ func renderClusterPlain(report ClusterReport, mode diff.Mode) (string, error) {
 	for _, chart := range report.Charts {
 		fmt.Fprintf(&b, "-- Chart: %s (namespace: %s) --\n", chart.Name, emptyToNone(chart.Namespace))
 		for _, resource := range chart.Resources {
-			fmt.Fprintf(&b, "Resource: %s/%s (%s)\n", resource.Kind, resource.Name, resource.State)
+			fmt.Fprintf(&b, "Resource: %s/%s (%s, severity: %s)\n", resource.Kind, resource.Name, resource.State, resource.Assessment.Level)
+			for _, finding := range topFindings(resource, 3) {
+				fmt.Fprintf(&b, "- %s\n", finding)
+			}
+			if len(resource.Assessment.Findings) > 0 {
+				b.WriteByte('\n')
+			}
 			semanticConsole, err := diff.RenderSemanticConsole(resource.Result.Changes)
 			if err != nil || strings.TrimSpace(semanticConsole) == "" {
 				semanticConsole = resource.Semantic
@@ -191,7 +200,13 @@ func renderClusterMarkdown(report ClusterReport, mode diff.Mode) (string, error)
 		fmt.Fprintf(&b, "### Chart `%s`\n\n", chart.Name)
 		fmt.Fprintf(&b, "- Namespace: `%s`\n\n", emptyToNone(chart.Namespace))
 		for _, resource := range chart.Resources {
-			fmt.Fprintf(&b, "#### Resource `%s/%s` (%s)\n\n", resource.Kind, resource.Name, resource.State)
+			fmt.Fprintf(&b, "#### Resource `%s/%s` (%s, severity: %s)\n\n", resource.Kind, resource.Name, resource.State, resource.Assessment.Level)
+			if findings := topFindings(resource, 3); len(findings) > 0 {
+				for _, finding := range findings {
+					fmt.Fprintf(&b, "- %s\n", finding)
+				}
+				fmt.Fprintln(&b)
+			}
 			semanticMarkdown, err := diff.RenderSemanticMarkdown(resource.Result.Changes)
 			if err != nil || strings.TrimSpace(semanticMarkdown) == "" {
 				semanticMarkdown = resource.Semantic
@@ -234,11 +249,12 @@ func renderClusterComment(report ClusterReport, mode diff.Mode, opts NoteRenderO
 
 	for _, chart := range report.Charts {
 		added, removed, changed := chartChangeCounts(chart)
-		fmt.Fprintf(&b, "<details>\n<summary>Chart `%s` · namespace `%s` · added %d · removed %d · changed %d</summary>\n\n", chart.Name, emptyToNone(chart.Namespace), added, removed, changed)
+		fmt.Fprintf(&b, "<details>\n<summary>Chart `%s` · namespace `%s` · severity `%s` · added %d · removed %d · changed %d</summary>\n\n", chart.Name, emptyToNone(chart.Namespace), chartSeverity(chart), added, removed, changed)
 		fmt.Fprintf(&b, "- Kinds affected: %s\n", strings.Join(chartKinds(chart), ", "))
 		if onlyValueTweaks(chart) {
 			fmt.Fprintln(&b, "- Scope: value-level tweaks only")
 		}
+		fmt.Fprintf(&b, "- Severity summary: %s\n", formatSeveritySummary(chartSeverityCounts(chart)))
 		notables := collectNotableChanges(chart)
 		if len(notables) > 0 {
 			fmt.Fprintln(&b, "- Notable changes:")
@@ -256,7 +272,13 @@ func renderClusterComment(report ClusterReport, mode diff.Mode, opts NoteRenderO
 			continue
 		}
 		for _, resource := range chart.Resources {
-			fmt.Fprintf(&b, "#### Resource `%s/%s` (%s)\n\n", resource.Kind, resource.Name, resource.State)
+			fmt.Fprintf(&b, "#### Resource `%s/%s` (%s, severity: %s)\n\n", resource.Kind, resource.Name, resource.State, resource.Assessment.Level)
+			if findings := topFindings(resource, 3); len(findings) > 0 {
+				for _, finding := range findings {
+					fmt.Fprintf(&b, "- %s\n", finding)
+				}
+				fmt.Fprintln(&b)
+			}
 			semanticMarkdown, err := diff.RenderSemanticMarkdown(resource.Result.Changes)
 			if err != nil || strings.TrimSpace(semanticMarkdown) == "" {
 				semanticMarkdown = resource.Semantic
@@ -315,6 +337,9 @@ func sortReportsForComment(reports []ClusterReport) {
 	for i := range reports {
 		sort.SliceStable(reports[i].Charts, func(a, b int) bool {
 			left, right := reports[i].Charts[a], reports[i].Charts[b]
+			if severity.Rank(chartSeverity(left)) != severity.Rank(chartSeverity(right)) {
+				return severity.Rank(chartSeverity(left)) > severity.Rank(chartSeverity(right))
+			}
 			la, lr, lc := chartChangeCounts(left)
 			ra, rr, rc := chartChangeCounts(right)
 			if lr != rr {
@@ -333,6 +358,9 @@ func sortReportsForComment(reports []ClusterReport) {
 		for j := range reports[i].Charts {
 			sort.SliceStable(reports[i].Charts[j].Resources, func(a, b int) bool {
 				left, right := reports[i].Charts[j].Resources[a], reports[i].Charts[j].Resources[b]
+				if severity.Rank(left.Assessment.Level) != severity.Rank(right.Assessment.Level) {
+					return severity.Rank(left.Assessment.Level) > severity.Rank(right.Assessment.Level)
+				}
 				if stateWeight(left.State) != stateWeight(right.State) {
 					return stateWeight(left.State) < stateWeight(right.State)
 				}
@@ -362,9 +390,8 @@ func renderTopSummary(b *strings.Builder, reports []ClusterReport) {
 	totalCharts := 0
 	totalResources := 0
 	c := counts{}
-	var highlights []string
-	var riskLabels []string
-	riskSet := map[string]struct{}{}
+	severityCounts := map[severity.Level]int{}
+	highlights := collectReviewHighlights(reports, 5)
 
 	for _, report := range reports {
 		totalCharts += len(report.Charts)
@@ -374,31 +401,19 @@ func renderTopSummary(b *strings.Builder, reports []ClusterReport) {
 			c.removed += removed
 			c.changed += changed
 			totalResources += added + removed + changed
-			if len(highlights) < 5 {
-				if label := chartHighlight(chart); label != "" {
-					highlights = append(highlights, label)
-				}
-			}
 			for _, resource := range chart.Resources {
-				if risk := riskyKindLabel(resource.Kind); risk != "" {
-					riskSet[risk] = struct{}{}
-				}
+				severityCounts[resource.Assessment.Level]++
 			}
 		}
 	}
-
-	for risk := range riskSet {
-		riskLabels = append(riskLabels, risk)
-	}
-	sort.Strings(riskLabels)
 
 	fmt.Fprintln(b, "## Review Summary")
 	fmt.Fprintln(b)
 	fmt.Fprintln(b, "| Clusters | Charts | Resources | Added | Removed | Changed |")
 	fmt.Fprintln(b, "| ---: | ---: | ---: | ---: | ---: | ---: |")
 	fmt.Fprintf(b, "| %d | %d | %d | %d | %d | %d |\n\n", totalClusters, totalCharts, totalResources, c.added, c.removed, c.changed)
-	if len(riskLabels) > 0 {
-		fmt.Fprintf(b, "**Risk labels:** %s\n\n", strings.Join(riskLabels, ", "))
+	if summary := formatSeveritySummary(severityCounts); summary != "" {
+		fmt.Fprintf(b, "**Severity:** %s\n\n", summary)
 	}
 	if len(highlights) > 0 {
 		fmt.Fprintln(b, "**Highlights**")
@@ -407,14 +422,6 @@ func renderTopSummary(b *strings.Builder, reports []ClusterReport) {
 			fmt.Fprintf(b, "- %s\n", highlight)
 		}
 	}
-}
-
-func chartHighlight(chart ChartReport) string {
-	if notables := collectNotableChanges(chart); len(notables) > 0 {
-		return notables[0]
-	}
-	added, removed, changed := chartChangeCounts(chart)
-	return fmt.Sprintf("Chart `%s`: %d added, %d removed, %d changed", chart.Name, added, removed, changed)
 }
 
 func chartKinds(chart ChartReport) []string {
@@ -442,48 +449,14 @@ func onlyValueTweaks(chart ChartReport) bool {
 func collectNotableChanges(chart ChartReport) []string {
 	var out []string
 	for _, resource := range chart.Resources {
-		for _, line := range notableChanges(resource) {
-			out = append(out, fmt.Sprintf("`%s/%s`: %s", resource.Kind, resource.Name, line))
+		for _, line := range topFindings(resource, 3) {
+			out = append(out, fmt.Sprintf("`%s/%s` [%s]: %s", resource.Kind, resource.Name, resource.Assessment.Level, line))
 			if len(out) >= 5 {
 				return out
 			}
 		}
 	}
 	return out
-}
-
-func notableChanges(resource ResourceReport) []string {
-	var out []string
-	clusterScoped := resource.Result.Changes == nil && resource.State != "" // no-op placeholder not used
-	_ = clusterScoped
-	if risk := riskyKindLabel(resource.Kind); risk != "" {
-		out = append(out, risk)
-	}
-	for _, change := range resource.Result.Changes {
-		path := diff.PathString(change.Path)
-		switch {
-		case path == "spec.replicas":
-			out = append(out, fmt.Sprintf("replicas changed %v -> %v", change.Old, change.New))
-		case strings.Contains(path, ".image") && !strings.Contains(path, "imagePullPolicy"):
-			out = append(out, fmt.Sprintf("image changed %v -> %v", change.Old, change.New))
-		case strings.HasSuffix(path, "imagePullPolicy"):
-			out = append(out, fmt.Sprintf("image pull policy changed %v -> %v", change.Old, change.New))
-		case strings.Contains(path, ".resources.requests.") || strings.Contains(path, ".resources.limits."):
-			out = append(out, fmt.Sprintf("resource sizing changed at `%s`", path))
-		case path == "spec.type":
-			out = append(out, fmt.Sprintf("service type changed %v -> %v", change.Old, change.New))
-		case strings.Contains(path, ".host") || strings.Contains(path, ".hosts"):
-			out = append(out, fmt.Sprintf("ingress host changed at `%s`", path))
-		case strings.Contains(path, ".path") || strings.Contains(path, ".paths"):
-			if strings.Contains(path, "rules") || strings.Contains(path, "http") {
-				out = append(out, fmt.Sprintf("ingress path changed at `%s`", path))
-			}
-		}
-		if len(out) >= 5 {
-			break
-		}
-	}
-	return dedupeStrings(out)
 }
 
 func dedupeStrings(in []string) []string {
@@ -502,13 +475,88 @@ func dedupeStrings(in []string) []string {
 	return out
 }
 
-func riskyKindLabel(kind string) string {
-	switch kind {
-	case "Namespace", "CustomResourceDefinition", "ClusterRole", "ClusterRoleBinding", "MutatingWebhookConfiguration", "ValidatingWebhookConfiguration":
-		return fmt.Sprintf("risk: %s changed", kind)
-	default:
-		return ""
+func topFindings(resource ResourceReport, limit int) []string {
+	if limit <= 0 {
+		return nil
 	}
+	out := make([]string, 0, limit)
+	for _, finding := range resource.Assessment.Findings {
+		out = append(out, finding.Reason)
+		if len(out) >= limit {
+			break
+		}
+	}
+	return dedupeStrings(out)
+}
+
+func chartSeverity(chart ChartReport) severity.Level {
+	level := severity.LevelInfo
+	for _, resource := range chart.Resources {
+		if severity.Rank(resource.Assessment.Level) > severity.Rank(level) {
+			level = resource.Assessment.Level
+		}
+	}
+	return level
+}
+
+func chartSeverityCounts(chart ChartReport) map[severity.Level]int {
+	counts := map[severity.Level]int{}
+	for _, resource := range chart.Resources {
+		counts[resource.Assessment.Level]++
+	}
+	return counts
+}
+
+func collectReviewHighlights(reports []ClusterReport, limit int) []string {
+	type highlight struct {
+		level severity.Level
+		text  string
+	}
+	var items []highlight
+	for _, report := range reports {
+		for _, chart := range report.Charts {
+			for _, resource := range chart.Resources {
+				for _, finding := range topFindings(resource, 2) {
+					items = append(items, highlight{
+						level: resource.Assessment.Level,
+						text:  fmt.Sprintf("Cluster `%s` · `%s/%s` [%s]: %s", report.Name, resource.Kind, resource.Name, resource.Assessment.Level, finding),
+					})
+				}
+			}
+		}
+	}
+	sort.SliceStable(items, func(i, j int) bool {
+		if severity.Rank(items[i].level) != severity.Rank(items[j].level) {
+			return severity.Rank(items[i].level) > severity.Rank(items[j].level)
+		}
+		return items[i].text < items[j].text
+	})
+	out := make([]string, 0, limit)
+	for _, item := range items {
+		out = append(out, item.text)
+		if len(out) >= limit {
+			break
+		}
+	}
+	return dedupeStrings(out)
+}
+
+func formatSeveritySummary(counts map[severity.Level]int) string {
+	order := []severity.Level{
+		severity.LevelCritical,
+		severity.LevelHigh,
+		severity.LevelMedium,
+		severity.LevelLow,
+		severity.LevelInfo,
+	}
+	var parts []string
+	for _, level := range order {
+		if counts[level] == 0 {
+			continue
+		}
+		parts = append(parts, fmt.Sprintf("%s %d", level, counts[level]))
+	}
+	return strings.Join(parts, ", ")
 }
 
 func renderFooter(b *strings.Builder, opts NoteRenderOptions) {

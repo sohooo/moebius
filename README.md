@@ -51,12 +51,14 @@ When a GitLab MR pipeline runs `møbius comment`, it:
 The posted note contains:
 
 - a top-level review summary with total counts
-- short highlights for notable changes
+- a severity breakdown across changed resources
+- short highlights for the highest-severity findings
 - a per-cluster summary table
 - one collapsible section per chart
-- compact chart summaries with counts, kinds, and notable changes
+- compact chart summaries with counts, kinds, severity summaries, and notable changes
 - resource-level diff sections inside each chart section
 - semantic diff snippets that highlight the effective Kubernetes changes
+- per-resource severity labels with short human-readable findings
 
 If there are no effective changes, `møbius comment` updates the sticky note to a short no-change message instead of deleting it.
 

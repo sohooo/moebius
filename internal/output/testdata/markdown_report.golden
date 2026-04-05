@@ -8,7 +8,9 @@
 
 - Namespace: `demo`
 
-#### Resource `Deployment/hello-world` (changed)
+#### Resource `Deployment/hello-world` (changed, severity: high)
+
+- replicas changed 2 -> 3
 
 ```diff
 # Path: spec.replicas (changed)
@@ -17,7 +19,9 @@ spec:
 +     replicas: 3
 ```
 
-#### Resource `ClusterRole/hello-world` (changed)
+#### Resource `ClusterRole/hello-world` (changed, severity: critical)
+
+- RBAC rules changed at `rules`
 
 ```diff
 # Path: rules (changed)

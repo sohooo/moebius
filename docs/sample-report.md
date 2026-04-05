@@ -8,7 +8,10 @@
 
 - Namespace: `hello-world`
 
-#### Resource `Deployment/hello-world` (changed)
+#### Resource `Deployment/hello-world` (changed, severity: high)
+
+- replicas changed 2 -> 3
+- image pull policy changed IfNotPresent -> Always
 
 ```diff
 # Path: spec.replicas (changed)

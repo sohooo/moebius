@@ -17,6 +17,7 @@ import (
 	"mobius/internal/helmrender"
 	"mobius/internal/output"
 	"mobius/internal/resources"
+	"mobius/internal/severity"
 )
 
 func Build(opts cli.Options) ([]output.ClusterReport, string, error) {
@@ -255,9 +256,9 @@ func compareCluster(cluster, baselineOutput, currentOutput, diffOutput string, c
 
 			oldPath, newPath := oldResource.Path, newResource.Path
 			oldValue, newValue := oldResource.Value, newResource.Value
-			kind, name := newResource.Kind, newResource.Name
+			kind, name, namespace := newResource.Kind, newResource.Name, newResource.Namespace
 			if !newOK {
-				kind, name = oldResource.Kind, oldResource.Name
+				kind, name, namespace = oldResource.Kind, oldResource.Name, oldResource.Namespace
 			}
 
 			result, err := diff.Compare(oldPath, newPath, oldValue, newValue, contextLines)
@@ -294,12 +295,22 @@ func compareCluster(cluster, baselineOutput, currentOutput, diffOutput string, c
 				report.Changed++
 			}
 
+			assessment := severity.Assess(severity.Input{
+				Kind:      kind,
+				Name:      name,
+				Namespace: namespace,
+				State:     state,
+				Changes:   result.Changes,
+			})
+
 			chartReport.Resources = append(chartReport.Resources, output.ResourceReport{
-				State:    state,
-				Kind:     kind,
-				Name:     name,
-				Result:   result,
-				Semantic: semanticText,
+				State:      state,
+				Kind:       kind,
+				Name:       name,
+				Namespace:  namespace,
+				Result:     result,
+				Semantic:   semanticText,
+				Assessment: assessment,
 			})
 		}
 
