@@ -12,7 +12,7 @@ Commit: `deadbeef`
 
 **Severity:** high 1
 
-**Validation:** 0 errors, 0 warnings
+**Validation:** 0 errors, 0 warnings, 0 unvalidated
 
 **Highlights**
 
@@ -36,6 +36,8 @@ Charts with changes: 1
   - `Deployment/hello-world` [high]: replicas changed 2 -> 3
 
 #### Resource `Deployment/hello-world` (changed, severity: high)
+
+- validation coverage: validated via embedded
 
 - replicas changed 2 -> 3
 

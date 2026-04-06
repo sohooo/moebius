@@ -162,6 +162,9 @@ func renderClusterPlain(report ClusterReport, mode diff.Mode) (string, error) {
 		fmt.Fprintf(&b, "-- Chart: %s (namespace: %s) --\n", chart.Name, emptyToNone(chart.Namespace))
 		for _, resource := range chart.Resources {
 			fmt.Fprintf(&b, "Resource: %s/%s (%s, severity: %s%s)\n", resource.Kind, resource.Name, resource.State, resource.Assessment.Level, validationSuffix(resource.Validation))
+			if detail := validationCoverageLine(resource.Validation); detail != "" {
+				fmt.Fprintf(&b, "= %s\n", detail)
+			}
 			for _, finding := range topValidationFindings(resource, 3) {
 				fmt.Fprintf(&b, "! %s\n", finding)
 			}
@@ -206,6 +209,9 @@ func renderClusterMarkdown(report ClusterReport, mode diff.Mode) (string, error)
 		fmt.Fprintf(&b, "- Namespace: `%s`\n\n", emptyToNone(chart.Namespace))
 		for _, resource := range chart.Resources {
 			fmt.Fprintf(&b, "#### Resource `%s/%s` (%s, severity: %s%s)\n\n", resource.Kind, resource.Name, resource.State, resource.Assessment.Level, validationSuffix(resource.Validation))
+			if detail := validationCoverageLine(resource.Validation); detail != "" {
+				fmt.Fprintf(&b, "- validation coverage: %s\n\n", detail)
+			}
 			if findings := topValidationFindings(resource, 3); len(findings) > 0 {
 				for _, finding := range findings {
 					fmt.Fprintf(&b, "- validation: %s\n", finding)
@@ -266,8 +272,9 @@ func renderClusterComment(report ClusterReport, mode diff.Mode, opts NoteRenderO
 			fmt.Fprintln(&b, "- Scope: value-level tweaks only")
 		}
 		fmt.Fprintf(&b, "- Severity summary: %s\n", formatSeveritySummary(chartSeverityCounts(chart)))
-		if errors, warnings := chartValidationCounts(chart); errors > 0 || warnings > 0 {
-			fmt.Fprintf(&b, "- Validation: %d errors, %d warnings\n", errors, warnings)
+		errors, warnings, unvalidated := chartValidationCounts(chart)
+		if errors > 0 || warnings > 0 || unvalidated > 0 {
+			fmt.Fprintf(&b, "- Validation: %d errors, %d warnings, %d unvalidated\n", errors, warnings, unvalidated)
 		}
 		notables := collectNotableChanges(chart)
 		if len(notables) > 0 {
@@ -287,6 +294,9 @@ func renderClusterComment(report ClusterReport, mode diff.Mode, opts NoteRenderO
 		}
 		for _, resource := range chart.Resources {
 			fmt.Fprintf(&b, "#### Resource `%s/%s` (%s, severity: %s%s)\n\n", resource.Kind, resource.Name, resource.State, resource.Assessment.Level, validationSuffix(resource.Validation))
+			if detail := validationCoverageLine(resource.Validation); detail != "" {
+				fmt.Fprintf(&b, "- validation coverage: %s\n\n", detail)
+			}
 			if findings := topValidationFindings(resource, 3); len(findings) > 0 {
 				for _, finding := range findings {
 					fmt.Fprintf(&b, "- validation: %s\n", finding)
@@ -416,6 +426,7 @@ func renderTopSummary(b *strings.Builder, reports []ClusterReport) {
 	severityCounts := map[severity.Level]int{}
 	validationErrors := 0
 	validationWarnings := 0
+	unvalidatedResources := 0
 	highlights := collectReviewHighlights(reports, 5)
 
 	for _, report := range reports {
@@ -434,6 +445,9 @@ func renderTopSummary(b *strings.Builder, reports []ClusterReport) {
 				case validate.StatusWarning:
 					validationWarnings++
 				}
+				if resource.Validation.Coverage == validate.CoverageUnvalidated {
+					unvalidatedResources++
+				}
 			}
 		}
 	}
@@ -446,7 +460,7 @@ func renderTopSummary(b *strings.Builder, reports []ClusterReport) {
 	if summary := formatSeveritySummary(severityCounts); summary != "" {
 		fmt.Fprintf(b, "**Severity:** %s\n\n", summary)
 	}
-	fmt.Fprintf(b, "**Validation:** %d errors, %d warnings\n\n", validationErrors, validationWarnings)
+	fmt.Fprintf(b, "**Validation:** %d errors, %d warnings, %d unvalidated\n\n", validationErrors, validationWarnings, unvalidatedResources)
 	if len(highlights) > 0 {
 		fmt.Fprintln(b, "**Highlights**")
 		fmt.Fprintln(b)
@@ -627,7 +641,7 @@ func formatSeveritySummary(counts map[severity.Level]int) string {
 	return strings.Join(parts, ", ")
 }
 
-func chartValidationCounts(chart ChartReport) (errors int, warnings int) {
+func chartValidationCounts(chart ChartReport) (errors int, warnings int, unvalidated int) {
 	for _, resource := range chart.Resources {
 		switch resource.Validation.Status {
 		case validate.StatusError:
@@ -635,8 +649,11 @@ func chartValidationCounts(chart ChartReport) (errors int, warnings int) {
 		case validate.StatusWarning:
 			warnings++
 		}
+		if resource.Validation.Coverage == validate.CoverageUnvalidated {
+			unvalidated++
+		}
 	}
-	return errors, warnings
+	return errors, warnings, unvalidated
 }
 
 func validationSuffix(result validate.Result) string {
@@ -644,6 +661,20 @@ func validationSuffix(result validate.Result) string {
 		return ""
 	}
 	return fmt.Sprintf(", validation: %s", result.Status)
+}
+
+func validationCoverageLine(result validate.Result) string {
+	switch result.Coverage {
+	case validate.CoverageValidated:
+		if result.SchemaSource == validate.SchemaSourceNone || result.SchemaSource == "" {
+			return "validated"
+		}
+		return fmt.Sprintf("validated via %s", result.SchemaSource)
+	case validate.CoverageUnvalidated:
+		return "unvalidated (no schema available)"
+	default:
+		return ""
+	}
 }
 
 func validateStatusRank(status validate.Status) int {

@@ -1,28 +1,56 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "type": "object",
-  "required": ["apiVersion", "kind", "metadata", "spec"],
   "properties": {
-    "apiVersion": { "const": "postgresql.cnpg.io/v1" },
-    "kind": { "const": "Cluster" },
+    "apiVersion": {
+      "const": "postgresql.cnpg.io/v1"
+    },
+    "kind": {
+      "const": "Cluster"
+    },
     "metadata": {
-      "type": "object",
-      "required": ["name"],
       "properties": {
-        "name": { "type": "string", "minLength": 1 }
-      }
+        "name": {
+          "minLength": 1,
+          "type": "string"
+        }
+      },
+      "required": [
+        "name"
+      ],
+      "type": "object"
     },
     "spec": {
-      "type": "object",
       "properties": {
-        "instances": { "type": "integer" },
-        "storage": { "type": "object" },
-        "walStorage": { "type": "object" },
-        "bootstrap": { "type": "object" },
-        "backup": { "type": "object" },
-        "imageName": { "type": "string" },
-        "externalClusters": { "type": "array" }
-      }
+        "backup": {
+          "type": "object"
+        },
+        "bootstrap": {
+          "type": "object"
+        },
+        "externalClusters": {
+          "type": "array"
+        },
+        "imageName": {
+          "type": "string"
+        },
+        "instances": {
+          "type": "integer"
+        },
+        "storage": {
+          "type": "object"
+        },
+        "walStorage": {
+          "type": "object"
+        }
+      },
+      "type": "object"
     }
-  }
+  },
+  "required": [
+    "apiVersion",
+    "kind",
+    "metadata",
+    "spec"
+  ],
+  "type": "object"
 }

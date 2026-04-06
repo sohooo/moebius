@@ -9,6 +9,7 @@ import (
 	"mobius/internal/cli"
 	"mobius/internal/diff"
 	"mobius/internal/severity"
+	"mobius/internal/validate"
 )
 
 func TestRenderReports_Markdown(t *testing.T) {
@@ -105,6 +106,11 @@ func sampleClusterReport() ClusterReport {
 						Namespace:  "demo",
 						Result:     result,
 						Assessment: severity.Assess(severity.Input{Kind: "Deployment", Name: "hello-world", Namespace: "demo", State: "changed", Changes: result.Changes}),
+						Validation: validate.Result{
+							Status:       validate.StatusValid,
+							Coverage:     validate.CoverageValidated,
+							SchemaSource: validate.SchemaSourceEmbedded,
+						},
 					},
 					{
 						State:     "changed",
@@ -126,6 +132,11 @@ func sampleClusterReport() ClusterReport {
 							State:   "changed",
 							Changes: []diff.Change{{State: "changed", Path: []diff.Segment{{Key: "rules"}}, Old: []interface{}{"get"}, New: []interface{}{"get", "list"}}},
 						}),
+						Validation: validate.Result{
+							Status:       validate.StatusValid,
+							Coverage:     validate.CoverageUnvalidated,
+							SchemaSource: validate.SchemaSourceNone,
+						},
 					},
 				},
 			},

@@ -15,7 +15,7 @@ Generated: `2026-04-05T12:00:00Z`
 
 **Severity:** critical 1, high 1
 
-**Validation:** 0 errors, 0 warnings
+**Validation:** 0 errors, 0 warnings, 1 unvalidated
 
 **Highlights**
 
@@ -36,6 +36,7 @@ Charts with changes: 1
 - Kinds affected: ClusterRole, Deployment
 - Scope: value-level tweaks only
 - Severity summary: critical 1, high 1
+- Validation: 0 errors, 0 warnings, 1 unvalidated
 - Notable changes:
   - `ClusterRole/hello-world` [critical]: RBAC rules changed at `rules`
   - `Deployment/hello-world` [high]: replicas changed 2 -> 3

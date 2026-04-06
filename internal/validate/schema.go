@@ -9,6 +9,8 @@ import (
 	"sync"
 
 	"mobius/internal/resources"
+
+	"github.com/xeipuuv/gojsonschema"
 )
 
 //go:embed schemas/index.json schemas/kubernetes/*/*.json schemas/platform/*/*/*.json
@@ -35,17 +37,54 @@ type SchemaResolver struct {
 	embeddedOnce sync.Once
 	embedded     map[string]string
 	crdSchemas   map[string][]byte
+	cacheMu      sync.Mutex
+	cache        map[string]compiledSchema
+}
+
+type compiledSchema struct {
+	schema *gojsonschema.Schema
+	ref    string
+	source SchemaSource
 }
 
 func NewSchemaResolver(currentResources map[string]resources.Resource) *SchemaResolver {
 	return &SchemaResolver{
 		crdSchemas: extractCRDSchemas(currentResources),
+		cache:      map[string]compiledSchema{},
 	}
 }
 
-func (r *SchemaResolver) Resolve(gvk GVK) ([]byte, string, bool) {
+func (r *SchemaResolver) Resolve(gvk GVK) (*gojsonschema.Schema, string, SchemaSource, bool) {
+	schemaBytes, ref, source, ok := r.resolveBytes(gvk)
+	if !ok {
+		return nil, "", SchemaSourceNone, false
+	}
+	cacheKey := string(source) + ":" + ref
+	r.cacheMu.Lock()
+	cached, ok := r.cache[cacheKey]
+	r.cacheMu.Unlock()
+	if ok {
+		return cached.schema, cached.ref, cached.source, true
+	}
+
+	compiled, err := gojsonschema.NewSchema(gojsonschema.NewBytesLoader(schemaBytes))
+	if err != nil {
+		return nil, "", SchemaSourceNone, false
+	}
+	entry := compiledSchema{
+		schema: compiled,
+		ref:    ref,
+		source: source,
+	}
+	r.cacheMu.Lock()
+	r.cache[cacheKey] = entry
+	r.cacheMu.Unlock()
+	return entry.schema, entry.ref, entry.source, true
+}
+
+func (r *SchemaResolver) resolveBytes(gvk GVK) ([]byte, string, SchemaSource, bool) {
 	if schema, ok := r.crdSchemas[gvk.Canonical()]; ok {
-		return schema, "rendered-crd:" + gvk.Canonical(), true
+		return schema, "rendered-crd:" + gvk.Canonical(), SchemaSourceRenderedCRD, true
 	}
 	r.embeddedOnce.Do(func() {
 		data, err := schemaFS.ReadFile("schemas/index.json")
@@ -63,10 +102,10 @@ func (r *SchemaResolver) Resolve(gvk GVK) ([]byte, string, bool) {
 	if path, ok := r.embedded[gvk.Canonical()]; ok {
 		data, err := schemaFS.ReadFile(filepath.ToSlash(path))
 		if err == nil {
-			return data, "embedded:" + gvk.Canonical(), true
+			return data, "embedded:" + gvk.Canonical(), SchemaSourceEmbedded, true
 		}
 	}
-	return nil, "", false
+	return nil, "", SchemaSourceNone, false
 }
 
 func GVKFromResource(resource resources.Resource) GVK {

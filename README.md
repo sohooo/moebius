@@ -53,6 +53,7 @@ The posted note contains:
 - a top-level review summary with total counts
 - a severity breakdown across changed resources
 - validation error and warning counts
+- an unvalidated count when no matching schema bundle is available for some resources
 - short highlights for the highest-severity findings
 - a per-cluster summary table
 - one collapsible section per chart
@@ -211,6 +212,7 @@ Validation is offline-first:
 - supported platform CRDs can use embedded schema bundles
 - if a matching `CustomResourceDefinition` is rendered in the current chart, its schema takes precedence
 - semantic validators add warnings for suspicious-but-schema-valid configurations
+- reports distinguish schema-validated resources from unvalidated resources and show whether validation used a rendered CRD or an embedded schema bundle
 
 ## Quickstart
 
@@ -340,16 +342,33 @@ The `comment` subcommand always renders markdown internally and updates a single
 
 ## Schema Bundles
 
-`møbius` ships embedded schema bundles under [internal/validate/schemas](internal/validate/schemas) and keeps their sources pinned in [schemasources.yaml](schemasources.yaml).
+`møbius` ships embedded schema bundles under [internal/validate/schemas](internal/validate/schemas) and keeps the schema import manifest in [schemasources.yaml](schemasources.yaml).
 
-The update workflow is:
+Runtime stays fully offline:
+
+- `møbius` validates with rendered CRD schemas from the manifests under review when available
+- otherwise it uses schema files embedded from this repository
+- it never fetches schemas while running `diff` or `comment`
+
+The maintenance workflow is:
 
 ```bash
 make schema-sync
 make schema-verify
 ```
 
-Use this when adding new bundled schemas or refreshing the schema index after changing the embedded files.
+Use this when adding new bundled schemas or refreshing the embedded bundle from repo-local source files or explicit URL sources.
+
+Typical update flow:
+
+1. add or refresh schema source files, or update [schemasources.yaml](schemasources.yaml) with explicit URLs
+2. run `make schema-sync`
+3. review the generated schema diff under [internal/validate/schemas](internal/validate/schemas)
+4. run `make schema-verify`
+5. commit the schema updates
+6. build `bin/møbius`
+
+As long as the schema files are already committed, building `møbius` on-prem only needs the checked-in source tree and Go dependencies.
 
 ## Implementation Notes
 

@@ -32,6 +32,12 @@ func TestValidate_StructuralFindings(t *testing.T) {
 	if len(result.Findings) < 2 {
 		t.Fatalf("expected multiple findings, got %#v", result.Findings)
 	}
+	if result.Coverage != CoverageValidated {
+		t.Fatalf("expected validated coverage, got %s", result.Coverage)
+	}
+	if result.SchemaSource != SchemaSourceEmbedded {
+		t.Fatalf("expected embedded schema source, got %s", result.SchemaSource)
+	}
 }
 
 func TestValidate_BuiltinSchemaValidation(t *testing.T) {
@@ -59,6 +65,12 @@ func TestValidate_BuiltinSchemaValidation(t *testing.T) {
 		t.Fatalf("expected schema error, got %s (%v)", result.Status, result.Findings)
 	}
 	assertHasSource(t, result, SourceSchema)
+	if result.Coverage != CoverageValidated {
+		t.Fatalf("expected validated coverage, got %s", result.Coverage)
+	}
+	if result.SchemaSource != SchemaSourceEmbedded {
+		t.Fatalf("expected embedded schema source, got %s", result.SchemaSource)
+	}
 }
 
 func TestValidate_RenderedCRDSchemaOverridesEmbedded(t *testing.T) {
@@ -132,6 +144,12 @@ func TestValidate_RenderedCRDSchemaOverridesEmbedded(t *testing.T) {
 	}
 	if len(result.Findings) == 0 || result.Findings[0].SchemaRef != "rendered-crd:example.com/v1/Widget" {
 		t.Fatalf("expected rendered CRD schema ref, got %#v", result.Findings)
+	}
+	if result.Coverage != CoverageValidated {
+		t.Fatalf("expected validated coverage, got %s", result.Coverage)
+	}
+	if result.SchemaSource != SchemaSourceRenderedCRD {
+		t.Fatalf("expected rendered CRD source, got %s", result.SchemaSource)
 	}
 }
 
@@ -225,6 +243,12 @@ func TestValidate_EmbeddedPlatformSchemas(t *testing.T) {
 			if result.Status != StatusError {
 				t.Fatalf("expected schema error for %s, got %s (%v)", resource.Kind, result.Status, result.Findings)
 			}
+			if result.Coverage != CoverageValidated {
+				t.Fatalf("expected validated coverage for %s, got %s", resource.Kind, result.Coverage)
+			}
+			if result.SchemaSource != SchemaSourceEmbedded {
+				t.Fatalf("expected embedded schema source for %s, got %s", resource.Kind, result.SchemaSource)
+			}
 		})
 	}
 }
@@ -281,7 +305,40 @@ func TestValidate_SemanticValidators(t *testing.T) {
 				t.Fatalf("expected warning, got %s (%v)", result.Status, result.Findings)
 			}
 			assertHasSource(t, result, SourceSemantic)
+			if result.Coverage != CoverageValidated {
+				t.Fatalf("expected validated coverage, got %s", result.Coverage)
+			}
 		})
+	}
+}
+
+func TestValidate_MissingSchemaIsExplicitlyUnvalidated(t *testing.T) {
+	t.Parallel()
+
+	resource := resources.Resource{
+		APIVersion: "example.com/v1",
+		Kind:       "UnknownThing",
+		Name:       "demo",
+		Identity:   "example.com/v1|UnknownThing|demo|demo",
+		Value: map[string]interface{}{
+			"apiVersion": "example.com/v1",
+			"kind":       "UnknownThing",
+			"metadata":   map[string]interface{}{"name": "demo", "namespace": "demo"},
+			"spec":       map[string]interface{}{"enabled": true},
+		},
+	}
+
+	result := Validate(Input{
+		Resource:   resource,
+		Duplicates: map[string]int{resource.Identity: 1},
+		Resolver:   NewSchemaResolver(nil),
+	})
+
+	if result.Coverage != CoverageUnvalidated {
+		t.Fatalf("expected unvalidated coverage, got %s", result.Coverage)
+	}
+	if result.SchemaSource != SchemaSourceNone {
+		t.Fatalf("expected no schema source, got %s", result.SchemaSource)
 	}
 }
 

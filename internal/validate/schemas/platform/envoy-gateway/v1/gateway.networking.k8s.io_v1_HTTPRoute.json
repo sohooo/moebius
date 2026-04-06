@@ -1,41 +1,66 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "type": "object",
-  "required": ["apiVersion", "kind", "metadata", "spec"],
   "properties": {
-    "apiVersion": { "const": "gateway.networking.k8s.io/v1" },
-    "kind": { "const": "HTTPRoute" },
+    "apiVersion": {
+      "const": "gateway.networking.k8s.io/v1"
+    },
+    "kind": {
+      "const": "HTTPRoute"
+    },
     "metadata": {
-      "type": "object",
-      "required": ["name"],
       "properties": {
-        "name": { "type": "string", "minLength": 1 }
-      }
+        "name": {
+          "minLength": 1,
+          "type": "string"
+        }
+      },
+      "required": [
+        "name"
+      ],
+      "type": "object"
     },
     "spec": {
-      "type": "object",
       "properties": {
-        "hostnames": { "type": "array", "items": { "type": "string" } },
-        "rules": {
-          "type": "array",
+        "hostnames": {
           "items": {
-            "type": "object",
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "rules": {
+          "items": {
             "properties": {
               "backendRefs": {
-                "type": "array",
                 "items": {
-                  "type": "object",
-                  "required": ["name"],
                   "properties": {
-                    "name": { "type": "string" },
-                    "port": { "type": "integer" }
-                  }
-                }
+                    "name": {
+                      "type": "string"
+                    },
+                    "port": {
+                      "type": "integer"
+                    }
+                  },
+                  "required": [
+                    "name"
+                  ],
+                  "type": "object"
+                },
+                "type": "array"
               }
-            }
-          }
+            },
+            "type": "object"
+          },
+          "type": "array"
         }
-      }
+      },
+      "type": "object"
     }
-  }
+  },
+  "required": [
+    "apiVersion",
+    "kind",
+    "metadata",
+    "spec"
+  ],
+  "type": "object"
 }

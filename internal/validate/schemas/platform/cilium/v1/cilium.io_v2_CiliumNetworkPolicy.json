@@ -1,24 +1,44 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "type": "object",
-  "required": ["apiVersion", "kind", "metadata", "spec"],
   "properties": {
-    "apiVersion": { "const": "cilium.io/v2" },
-    "kind": { "const": "CiliumNetworkPolicy" },
+    "apiVersion": {
+      "const": "cilium.io/v2"
+    },
+    "kind": {
+      "const": "CiliumNetworkPolicy"
+    },
     "metadata": {
-      "type": "object",
-      "required": ["name"],
       "properties": {
-        "name": { "type": "string", "minLength": 1 }
-      }
+        "name": {
+          "minLength": 1,
+          "type": "string"
+        }
+      },
+      "required": [
+        "name"
+      ],
+      "type": "object"
     },
     "spec": {
-      "type": "object",
       "properties": {
-        "endpointSelector": { "type": "object" },
-        "ingress": { "type": "array" },
-        "egress": { "type": "array" }
-      }
+        "egress": {
+          "type": "array"
+        },
+        "endpointSelector": {
+          "type": "object"
+        },
+        "ingress": {
+          "type": "array"
+        }
+      },
+      "type": "object"
     }
-  }
+  },
+  "required": [
+    "apiVersion",
+    "kind",
+    "metadata",
+    "spec"
+  ],
+  "type": "object"
 }

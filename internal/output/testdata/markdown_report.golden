@@ -10,6 +10,8 @@
 
 #### Resource `Deployment/hello-world` (changed, severity: high)
 
+- validation coverage: validated via embedded
+
 - replicas changed 2 -> 3
 
 ```diff
@@ -20,6 +22,8 @@ spec:
 ```
 
 #### Resource `ClusterRole/hello-world` (changed, severity: critical)
+
+- validation coverage: unvalidated (no schema available)
 
 - RBAC rules changed at `rules`
 

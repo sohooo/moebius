@@ -1,23 +1,42 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "type": "object",
-  "required": ["apiVersion", "kind", "metadata", "spec"],
   "properties": {
-    "apiVersion": { "const": "gateway.networking.k8s.io/v1" },
-    "kind": { "const": "GatewayClass" },
+    "apiVersion": {
+      "const": "gateway.networking.k8s.io/v1"
+    },
+    "kind": {
+      "const": "GatewayClass"
+    },
     "metadata": {
-      "type": "object",
-      "required": ["name"],
       "properties": {
-        "name": { "type": "string", "minLength": 1 }
-      }
+        "name": {
+          "minLength": 1,
+          "type": "string"
+        }
+      },
+      "required": [
+        "name"
+      ],
+      "type": "object"
     },
     "spec": {
-      "type": "object",
-      "required": ["controllerName"],
       "properties": {
-        "controllerName": { "type": "string", "minLength": 1 }
-      }
+        "controllerName": {
+          "minLength": 1,
+          "type": "string"
+        }
+      },
+      "required": [
+        "controllerName"
+      ],
+      "type": "object"
     }
-  }
+  },
+  "required": [
+    "apiVersion",
+    "kind",
+    "metadata",
+    "spec"
+  ],
+  "type": "object"
 }

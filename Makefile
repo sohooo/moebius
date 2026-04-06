@@ -55,7 +55,7 @@ help:
 		'run     Run "bin/møbius diff"' \
 		'diff-markdown  Run "bin/møbius diff --output-format markdown"' \
 		'comment Run "bin/møbius comment"' \
-		'schema-sync Regenerate the embedded schema index from the bundled schemas' \
-		'schema-verify Verify the embedded schema index is up to date' \
+		'schema-sync Import schema sources and regenerate the embedded schema bundle' \
+		'schema-verify Verify the embedded schema bundle is up to date' \
 		'verify  Format, test, and build' \
 		'clean   Remove the built binary'

@@ -1,47 +1,72 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "type": "object",
-  "required": ["apiVersion", "kind", "metadata", "spec"],
   "properties": {
-    "apiVersion": { "const": "networking.k8s.io/v1" },
-    "kind": { "const": "Ingress" },
+    "apiVersion": {
+      "const": "networking.k8s.io/v1"
+    },
+    "kind": {
+      "const": "Ingress"
+    },
     "metadata": {
-      "type": "object",
-      "required": ["name"],
       "properties": {
-        "name": { "type": "string", "minLength": 1 }
-      }
+        "name": {
+          "minLength": 1,
+          "type": "string"
+        }
+      },
+      "required": [
+        "name"
+      ],
+      "type": "object"
     },
     "spec": {
-      "type": "object",
       "properties": {
         "rules": {
-          "type": "array",
           "items": {
-            "type": "object",
             "properties": {
-              "host": { "type": "string" },
+              "host": {
+                "type": "string"
+              },
               "http": {
-                "type": "object",
                 "properties": {
                   "paths": {
-                    "type": "array",
                     "items": {
-                      "type": "object",
-                      "required": ["pathType", "backend"],
                       "properties": {
-                        "path": { "type": "string" },
-                        "pathType": { "type": "string" },
-                        "backend": { "type": "object" }
-                      }
-                    }
+                        "backend": {
+                          "type": "object"
+                        },
+                        "path": {
+                          "type": "string"
+                        },
+                        "pathType": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "pathType",
+                        "backend"
+                      ],
+                      "type": "object"
+                    },
+                    "type": "array"
                   }
-                }
+                },
+                "type": "object"
               }
-            }
-          }
+            },
+            "type": "object"
+          },
+          "type": "array"
         }
-      }
+      },
+      "type": "object"
     }
-  }
+  },
+  "required": [
+    "apiVersion",
+    "kind",
+    "metadata",
+    "spec"
+  ],
+  "type": "object"
 }
