@@ -9,7 +9,7 @@ GOMODCACHE ?= /tmp/mobius-gomodcache
 export GOCACHE
 export GOMODCACHE
 
-.PHONY: build test fmt tidy run clean verify help diff-markdown comment
+.PHONY: build test fmt tidy run clean verify help diff-markdown comment schema-sync schema-verify
 
 build: $(BINARY)
 
@@ -37,6 +37,12 @@ comment:
 
 verify: fmt test build
 
+schema-sync:
+	$(GO) run ./cmd/schema-sync
+
+schema-verify:
+	$(GO) run ./cmd/schema-sync --verify
+
 clean:
 	rm -f $(BINARY)
 
@@ -49,5 +55,7 @@ help:
 		'run     Run "bin/møbius diff"' \
 		'diff-markdown  Run "bin/møbius diff --output-format markdown"' \
 		'comment Run "bin/møbius comment"' \
+		'schema-sync Regenerate the embedded schema index from the bundled schemas' \
+		'schema-verify Verify the embedded schema index is up to date' \
 		'verify  Format, test, and build' \
 		'clean   Remove the built binary'

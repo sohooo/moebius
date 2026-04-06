@@ -13,12 +13,14 @@ import (
 )
 
 type Resource struct {
-	Key       string
-	Kind      string
-	Name      string
-	Namespace string
-	Path      string
-	Value     interface{}
+	Key        string
+	Identity   string
+	APIVersion string
+	Kind       string
+	Name       string
+	Namespace  string
+	Path       string
+	Value      interface{}
 }
 
 func LoadFile(path string) (Resource, error) {
@@ -31,15 +33,17 @@ func LoadFile(path string) (Resource, error) {
 		return Resource{}, err
 	}
 	value = normalize(value)
-	kind, name, namespace := metadata(value)
+	apiVersion, kind, name, namespace := metadata(value)
 	key := strings.TrimSuffix(filepath.Base(path), filepath.Ext(path))
 	return Resource{
-		Key:       key,
-		Kind:      fallback(kind, "Unknown"),
-		Name:      fallback(name, "unnamed"),
-		Namespace: namespace,
-		Path:      path,
-		Value:     value,
+		Key:        key,
+		Identity:   canonicalIdentity(apiVersion, kind, namespace, name),
+		APIVersion: apiVersion,
+		Kind:       fallback(kind, "Unknown"),
+		Name:       fallback(name, "unnamed"),
+		Namespace:  namespace,
+		Path:       path,
+		Value:      value,
 	}, nil
 }
 
@@ -73,6 +77,7 @@ func SplitRendered(rendered string, resourceDir string) ([]Resource, error) {
 	decoder := yaml.NewDecoder(strings.NewReader(rendered))
 	var out []Resource
 	index := 0
+	identityCounts := map[string]int{}
 	for {
 		var value interface{}
 		if err := decoder.Decode(&value); err != nil {
@@ -85,7 +90,7 @@ func SplitRendered(rendered string, resourceDir string) ([]Resource, error) {
 			continue
 		}
 		value = normalize(value)
-		kind, name, namespace := metadata(value)
+		apiVersion, kind, name, namespace := metadata(value)
 		if kind == "" {
 			kind = "Unknown"
 		}
@@ -96,7 +101,12 @@ func SplitRendered(rendered string, resourceDir string) ([]Resource, error) {
 		if nsToken == "" {
 			nsToken = "cluster"
 		}
+		identity := canonicalIdentity(apiVersion, kind, namespace, name)
 		key := fmt.Sprintf("%s--%s--%s", kind, nsToken, name)
+		identityCounts[identity]++
+		if identityCounts[identity] > 1 {
+			key = fmt.Sprintf("%s--dup-%d", key, identityCounts[identity])
+		}
 		path := filepath.Join(resourceDir, key+".yaml")
 		data, err := yaml.Marshal(value)
 		if err != nil {
@@ -106,12 +116,14 @@ func SplitRendered(rendered string, resourceDir string) ([]Resource, error) {
 			return nil, err
 		}
 		out = append(out, Resource{
-			Key:       key,
-			Kind:      kind,
-			Name:      name,
-			Namespace: namespace,
-			Path:      path,
-			Value:     value,
+			Key:        key,
+			Identity:   identity,
+			APIVersion: apiVersion,
+			Kind:       kind,
+			Name:       name,
+			Namespace:  namespace,
+			Path:       path,
+			Value:      value,
 		})
 		index++
 	}
@@ -119,18 +131,23 @@ func SplitRendered(rendered string, resourceDir string) ([]Resource, error) {
 	return out, nil
 }
 
-func metadata(value interface{}) (kind string, name string, namespace string) {
+func metadata(value interface{}) (apiVersion string, kind string, name string, namespace string) {
 	root, ok := value.(map[string]interface{})
 	if !ok {
-		return "", "", ""
+		return "", "", "", ""
 	}
+	apiVersion, _ = root["apiVersion"].(string)
 	kind, _ = root["kind"].(string)
 	meta, _ := root["metadata"].(map[string]interface{})
 	if meta != nil {
 		name, _ = meta["name"].(string)
 		namespace, _ = meta["namespace"].(string)
 	}
-	return kind, name, namespace
+	return apiVersion, kind, name, namespace
+}
+
+func canonicalIdentity(apiVersion, kind, namespace, name string) string {
+	return fmt.Sprintf("%s|%s|%s|%s", fallback(apiVersion, "unknown"), fallback(kind, "Unknown"), namespace, fallback(name, "unnamed"))
 }
 
 func isZeroYAMLDocument(value interface{}) bool {

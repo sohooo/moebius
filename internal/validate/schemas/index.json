@@ -1,0 +1,18 @@
+{
+  "schemas": {
+    "apps/v1/Deployment": "schemas/kubernetes/v1/apps_v1_Deployment.json",
+    "batch/v1/Job": "schemas/kubernetes/v1/batch_v1_Job.json",
+    "cilium.io/v2/CiliumNetworkPolicy": "schemas/platform/cilium/v1/cilium.io_v2_CiliumNetworkPolicy.json",
+    "core/v1/Service": "schemas/kubernetes/v1/core_v1_Service.json",
+    "gateway.networking.k8s.io/v1/Gateway": "schemas/platform/envoy-gateway/v1/gateway.networking.k8s.io_v1_Gateway.json",
+    "gateway.networking.k8s.io/v1/GatewayClass": "schemas/platform/envoy-gateway/v1/gateway.networking.k8s.io_v1_GatewayClass.json",
+    "gateway.networking.k8s.io/v1/HTTPRoute": "schemas/platform/envoy-gateway/v1/gateway.networking.k8s.io_v1_HTTPRoute.json",
+    "k8s.keycloak.org/v2alpha1/Keycloak": "schemas/platform/keycloak/v1/k8s.keycloak.org_v2alpha1_Keycloak.json",
+    "k8s.keycloak.org/v2alpha1/KeycloakClient": "schemas/platform/keycloak/v1/k8s.keycloak.org_v2alpha1_KeycloakClient.json",
+    "longhorn.io/v1beta2/Volume": "schemas/platform/longhorn/v1/longhorn.io_v1beta2_Volume.json",
+    "networking.k8s.io/v1/Ingress": "schemas/kubernetes/v1/networking.k8s.io_v1_Ingress.json",
+    "postgresql.cnpg.io/v1/Cluster": "schemas/platform/cloudnative-pg/v1/postgresql.cnpg.io_v1_Cluster.json",
+    "secrets.hashicorp.com/v1beta1/VaultConnection": "schemas/platform/openbao/v1/secrets.hashicorp.com_v1beta1_VaultConnection.json",
+    "secrets.hashicorp.com/v1beta1/VaultPolicy": "schemas/platform/openbao/v1/secrets.hashicorp.com_v1beta1_VaultPolicy.json"
+  }
+}

@@ -1,0 +1,25 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "required": ["apiVersion", "kind", "metadata", "spec"],
+  "properties": {
+    "apiVersion": { "const": "longhorn.io/v1beta2" },
+    "kind": { "const": "Volume" },
+    "metadata": {
+      "type": "object",
+      "required": ["name"],
+      "properties": {
+        "name": { "type": "string", "minLength": 1 }
+      }
+    },
+    "spec": {
+      "type": "object",
+      "properties": {
+        "numberOfReplicas": { "type": "integer" },
+        "backupTargetName": { "type": "string" },
+        "dataLocality": { "type": "string" },
+        "accessMode": { "type": "string" }
+      }
+    }
+  }
+}

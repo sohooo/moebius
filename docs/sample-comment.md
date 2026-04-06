@@ -12,6 +12,8 @@ Commit: `deadbeef`
 
 **Severity:** high 1
 
+**Validation:** 0 errors, 0 warnings
+
 **Highlights**
 
 - Cluster `kube-bravo` · `Deployment/hello-world` [high]: replicas changed 2 -> 3

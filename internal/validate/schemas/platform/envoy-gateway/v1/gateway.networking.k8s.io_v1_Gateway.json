@@ -1,0 +1,35 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "required": ["apiVersion", "kind", "metadata", "spec"],
+  "properties": {
+    "apiVersion": { "const": "gateway.networking.k8s.io/v1" },
+    "kind": { "const": "Gateway" },
+    "metadata": {
+      "type": "object",
+      "required": ["name"],
+      "properties": {
+        "name": { "type": "string", "minLength": 1 }
+      }
+    },
+    "spec": {
+      "type": "object",
+      "required": ["listeners"],
+      "properties": {
+        "listeners": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["name", "port", "protocol"],
+            "properties": {
+              "name": { "type": "string" },
+              "port": { "type": "integer" },
+              "protocol": { "type": "string" },
+              "tls": { "type": "object" }
+            }
+          }
+        }
+      }
+    }
+  }
+}

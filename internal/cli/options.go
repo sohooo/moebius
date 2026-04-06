@@ -41,6 +41,7 @@ type Options struct {
 	CommentMode     CommentMode
 	MaxCommentBytes int
 	OutputFormat    OutputFormat
+	Validate        bool
 
 	ProjectID       string
 	MergeRequestIID string
@@ -55,6 +56,7 @@ func Parse(args []string, stdout io.Writer) (Options, error) {
 	opts.CommentMode = CommentModeFull
 	opts.MaxCommentBytes = 50000
 	opts.OutputFormat = OutputFormatPlain
+	opts.Validate = true
 
 	fs := flag.NewFlagSet("møbius", flag.ContinueOnError)
 	fs.SetOutput(stdout)
@@ -64,6 +66,7 @@ func Parse(args []string, stdout io.Writer) (Options, error) {
 	fs.BoolVar(&opts.AllClusters, "all-clusters", false, "Render and compare all clusters")
 	fs.StringVar(&opts.OutputDir, "output-dir", "", "Persist rendered artifacts and diffs under PATH")
 	fs.IntVar(&opts.ContextLines, "context-lines", opts.ContextLines, "Unified diff context lines")
+	fs.BoolVar(&opts.Validate, "validate", opts.Validate, "Validate current rendered resources against structural, schema, and semantic validators")
 	fs.IntVar(&opts.MaxCommentBytes, "max-comment-bytes", opts.MaxCommentBytes, "Maximum GitLab comment body size before fallback to a compact summary")
 	fs.StringVar(&opts.ProjectID, "project-id", "", "GitLab project ID override for comment mode")
 	fs.StringVar(&opts.MergeRequestIID, "mr-iid", "", "GitLab merge request IID override for comment mode")

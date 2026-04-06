@@ -1,0 +1,37 @@
+sources:
+  - component: kubernetes
+    version: v0.33.2
+    source_type: bundled
+    note: Built-in Kubernetes schemas are maintained in internal/validate/schemas/kubernetes and should track the Kubernetes API dependency in go.mod.
+  - component: cloudnative-pg
+    version: v1
+    source_type: crd
+    urls:
+      - https://raw.githubusercontent.com/cloudnative-pg/cloudnative-pg/main/releases/cnpg-1.27.0.yaml
+  - component: cilium
+    version: v1
+    source_type: crd
+    urls:
+      - https://raw.githubusercontent.com/cilium/cilium/main/install/kubernetes/cilium/crds/cilium.io_ciliumnetworkpolicies.yaml
+  - component: envoy-gateway
+    version: v1
+    source_type: crd
+    urls:
+      - https://raw.githubusercontent.com/envoyproxy/gateway/main/charts/gateway-helm/crds/generated/gateway-crds.yaml
+  - component: openbao
+    version: v1
+    source_type: crd
+    urls:
+      - https://raw.githubusercontent.com/hashicorp/vault-secrets-operator/main/config/crd/bases/secrets.hashicorp.com_vaultconnections.yaml
+      - https://raw.githubusercontent.com/hashicorp/vault-secrets-operator/main/config/crd/bases/secrets.hashicorp.com_vaultpolicies.yaml
+  - component: keycloak
+    version: v1
+    source_type: crd
+    urls:
+      - https://raw.githubusercontent.com/keycloak/keycloak-k8s-resources/main/kubernetes/keycloaks.k8s.keycloak.org-v1.yml
+      - https://raw.githubusercontent.com/keycloak/keycloak-k8s-resources/main/kubernetes/keycloakclients.k8s.keycloak.org-v1.yml
+  - component: longhorn
+    version: v1
+    source_type: crd
+    urls:
+      - https://raw.githubusercontent.com/longhorn/longhorn/master/chart/templates/crds.yaml

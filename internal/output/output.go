@@ -10,6 +10,7 @@ import (
 	"mobius/internal/cli"
 	"mobius/internal/diff"
 	"mobius/internal/severity"
+	"mobius/internal/validate"
 )
 
 const StickyMarker = "<!-- mobius:mr-diff -->"
@@ -22,6 +23,7 @@ type ResourceReport struct {
 	Result     diff.Result
 	Semantic   string
 	Assessment severity.Assessment
+	Validation validate.Result
 }
 
 type ChartReport struct {
@@ -159,11 +161,14 @@ func renderClusterPlain(report ClusterReport, mode diff.Mode) (string, error) {
 	for _, chart := range report.Charts {
 		fmt.Fprintf(&b, "-- Chart: %s (namespace: %s) --\n", chart.Name, emptyToNone(chart.Namespace))
 		for _, resource := range chart.Resources {
-			fmt.Fprintf(&b, "Resource: %s/%s (%s, severity: %s)\n", resource.Kind, resource.Name, resource.State, resource.Assessment.Level)
+			fmt.Fprintf(&b, "Resource: %s/%s (%s, severity: %s%s)\n", resource.Kind, resource.Name, resource.State, resource.Assessment.Level, validationSuffix(resource.Validation))
+			for _, finding := range topValidationFindings(resource, 3) {
+				fmt.Fprintf(&b, "! %s\n", finding)
+			}
 			for _, finding := range topFindings(resource, 3) {
 				fmt.Fprintf(&b, "- %s\n", finding)
 			}
-			if len(resource.Assessment.Findings) > 0 {
+			if len(resource.Assessment.Findings) > 0 || len(resource.Validation.Findings) > 0 {
 				b.WriteByte('\n')
 			}
 			semanticConsole, err := diff.RenderSemanticConsole(resource.Result.Changes)
@@ -200,7 +205,13 @@ func renderClusterMarkdown(report ClusterReport, mode diff.Mode) (string, error)
 		fmt.Fprintf(&b, "### Chart `%s`\n\n", chart.Name)
 		fmt.Fprintf(&b, "- Namespace: `%s`\n\n", emptyToNone(chart.Namespace))
 		for _, resource := range chart.Resources {
-			fmt.Fprintf(&b, "#### Resource `%s/%s` (%s, severity: %s)\n\n", resource.Kind, resource.Name, resource.State, resource.Assessment.Level)
+			fmt.Fprintf(&b, "#### Resource `%s/%s` (%s, severity: %s%s)\n\n", resource.Kind, resource.Name, resource.State, resource.Assessment.Level, validationSuffix(resource.Validation))
+			if findings := topValidationFindings(resource, 3); len(findings) > 0 {
+				for _, finding := range findings {
+					fmt.Fprintf(&b, "- validation: %s\n", finding)
+				}
+				fmt.Fprintln(&b)
+			}
 			if findings := topFindings(resource, 3); len(findings) > 0 {
 				for _, finding := range findings {
 					fmt.Fprintf(&b, "- %s\n", finding)
@@ -255,6 +266,9 @@ func renderClusterComment(report ClusterReport, mode diff.Mode, opts NoteRenderO
 			fmt.Fprintln(&b, "- Scope: value-level tweaks only")
 		}
 		fmt.Fprintf(&b, "- Severity summary: %s\n", formatSeveritySummary(chartSeverityCounts(chart)))
+		if errors, warnings := chartValidationCounts(chart); errors > 0 || warnings > 0 {
+			fmt.Fprintf(&b, "- Validation: %d errors, %d warnings\n", errors, warnings)
+		}
 		notables := collectNotableChanges(chart)
 		if len(notables) > 0 {
 			fmt.Fprintln(&b, "- Notable changes:")
@@ -272,7 +286,13 @@ func renderClusterComment(report ClusterReport, mode diff.Mode, opts NoteRenderO
 			continue
 		}
 		for _, resource := range chart.Resources {
-			fmt.Fprintf(&b, "#### Resource `%s/%s` (%s, severity: %s)\n\n", resource.Kind, resource.Name, resource.State, resource.Assessment.Level)
+			fmt.Fprintf(&b, "#### Resource `%s/%s` (%s, severity: %s%s)\n\n", resource.Kind, resource.Name, resource.State, resource.Assessment.Level, validationSuffix(resource.Validation))
+			if findings := topValidationFindings(resource, 3); len(findings) > 0 {
+				for _, finding := range findings {
+					fmt.Fprintf(&b, "- validation: %s\n", finding)
+				}
+				fmt.Fprintln(&b)
+			}
 			if findings := topFindings(resource, 3); len(findings) > 0 {
 				for _, finding := range findings {
 					fmt.Fprintf(&b, "- %s\n", finding)
@@ -358,6 +378,9 @@ func sortReportsForComment(reports []ClusterReport) {
 		for j := range reports[i].Charts {
 			sort.SliceStable(reports[i].Charts[j].Resources, func(a, b int) bool {
 				left, right := reports[i].Charts[j].Resources[a], reports[i].Charts[j].Resources[b]
+				if validateStatusRank(left.Validation.Status) != validateStatusRank(right.Validation.Status) {
+					return validateStatusRank(left.Validation.Status) > validateStatusRank(right.Validation.Status)
+				}
 				if severity.Rank(left.Assessment.Level) != severity.Rank(right.Assessment.Level) {
 					return severity.Rank(left.Assessment.Level) > severity.Rank(right.Assessment.Level)
 				}
@@ -391,6 +414,8 @@ func renderTopSummary(b *strings.Builder, reports []ClusterReport) {
 	totalResources := 0
 	c := counts{}
 	severityCounts := map[severity.Level]int{}
+	validationErrors := 0
+	validationWarnings := 0
 	highlights := collectReviewHighlights(reports, 5)
 
 	for _, report := range reports {
@@ -403,6 +428,12 @@ func renderTopSummary(b *strings.Builder, reports []ClusterReport) {
 			totalResources += added + removed + changed
 			for _, resource := range chart.Resources {
 				severityCounts[resource.Assessment.Level]++
+				switch resource.Validation.Status {
+				case validate.StatusError:
+					validationErrors++
+				case validate.StatusWarning:
+					validationWarnings++
+				}
 			}
 		}
 	}
@@ -415,6 +446,7 @@ func renderTopSummary(b *strings.Builder, reports []ClusterReport) {
 	if summary := formatSeveritySummary(severityCounts); summary != "" {
 		fmt.Fprintf(b, "**Severity:** %s\n\n", summary)
 	}
+	fmt.Fprintf(b, "**Validation:** %d errors, %d warnings\n\n", validationErrors, validationWarnings)
 	if len(highlights) > 0 {
 		fmt.Fprintln(b, "**Highlights**")
 		fmt.Fprintln(b)
@@ -449,6 +481,12 @@ func onlyValueTweaks(chart ChartReport) bool {
 func collectNotableChanges(chart ChartReport) []string {
 	var out []string
 	for _, resource := range chart.Resources {
+		for _, line := range topValidationFindings(resource, 2) {
+			out = append(out, fmt.Sprintf("`%s/%s` [validation:%s]: %s", resource.Kind, resource.Name, resource.Validation.Status, line))
+			if len(out) >= 5 {
+				return out
+			}
+		}
 		for _, line := range topFindings(resource, 3) {
 			out = append(out, fmt.Sprintf("`%s/%s` [%s]: %s", resource.Kind, resource.Name, resource.Assessment.Level, line))
 			if len(out) >= 5 {
@@ -489,6 +527,24 @@ func topFindings(resource ResourceReport, limit int) []string {
 	return dedupeStrings(out)
 }
 
+func topValidationFindings(resource ResourceReport, limit int) []string {
+	if limit <= 0 {
+		return nil
+	}
+	out := make([]string, 0, limit)
+	for _, finding := range resource.Validation.Findings {
+		line := finding.Message
+		if finding.Path != "" {
+			line = fmt.Sprintf("%s (%s)", line, finding.Path)
+		}
+		out = append(out, line)
+		if len(out) >= limit {
+			break
+		}
+	}
+	return dedupeStrings(out)
+}
+
 func chartSeverity(chart ChartReport) severity.Level {
 	level := severity.LevelInfo
 	for _, resource := range chart.Resources {
@@ -509,23 +565,35 @@ func chartSeverityCounts(chart ChartReport) map[severity.Level]int {
 
 func collectReviewHighlights(reports []ClusterReport, limit int) []string {
 	type highlight struct {
-		level severity.Level
-		text  string
+		validation validate.Status
+		level      severity.Level
+		text       string
 	}
 	var items []highlight
 	for _, report := range reports {
 		for _, chart := range report.Charts {
 			for _, resource := range chart.Resources {
+				for _, finding := range topValidationFindings(resource, 2) {
+					items = append(items, highlight{
+						validation: resource.Validation.Status,
+						level:      resource.Assessment.Level,
+						text:       fmt.Sprintf("Cluster `%s` · `%s/%s` [validation:%s]: %s", report.Name, resource.Kind, resource.Name, resource.Validation.Status, finding),
+					})
+				}
 				for _, finding := range topFindings(resource, 2) {
 					items = append(items, highlight{
-						level: resource.Assessment.Level,
-						text:  fmt.Sprintf("Cluster `%s` · `%s/%s` [%s]: %s", report.Name, resource.Kind, resource.Name, resource.Assessment.Level, finding),
+						validation: resource.Validation.Status,
+						level:      resource.Assessment.Level,
+						text:       fmt.Sprintf("Cluster `%s` · `%s/%s` [%s]: %s", report.Name, resource.Kind, resource.Name, resource.Assessment.Level, finding),
 					})
 				}
 			}
 		}
 	}
 	sort.SliceStable(items, func(i, j int) bool {
+		if validateStatusRank(items[i].validation) != validateStatusRank(items[j].validation) {
+			return validateStatusRank(items[i].validation) > validateStatusRank(items[j].validation)
+		}
 		if severity.Rank(items[i].level) != severity.Rank(items[j].level) {
 			return severity.Rank(items[i].level) > severity.Rank(items[j].level)
 		}
@@ -557,6 +625,36 @@ func formatSeveritySummary(counts map[severity.Level]int) string {
 		parts = append(parts, fmt.Sprintf("%s %d", level, counts[level]))
 	}
 	return strings.Join(parts, ", ")
+}
+
+func chartValidationCounts(chart ChartReport) (errors int, warnings int) {
+	for _, resource := range chart.Resources {
+		switch resource.Validation.Status {
+		case validate.StatusError:
+			errors++
+		case validate.StatusWarning:
+			warnings++
+		}
+	}
+	return errors, warnings
+}
+
+func validationSuffix(result validate.Result) string {
+	if result.Status == "" || result.Status == validate.StatusValid {
+		return ""
+	}
+	return fmt.Sprintf(", validation: %s", result.Status)
+}
+
+func validateStatusRank(status validate.Status) int {
+	switch status {
+	case validate.StatusError:
+		return 3
+	case validate.StatusWarning:
+		return 2
+	default:
+		return 1
+	}
 }
 
 func renderFooter(b *strings.Builder, opts NoteRenderOptions) {

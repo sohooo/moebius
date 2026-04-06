@@ -18,6 +18,7 @@ import (
 	"mobius/internal/output"
 	"mobius/internal/resources"
 	"mobius/internal/severity"
+	"mobius/internal/validate"
 )
 
 func Build(opts cli.Options) ([]output.ClusterReport, string, error) {
@@ -109,7 +110,7 @@ func Build(opts cli.Options) ([]output.ClusterReport, string, error) {
 			return nil, "", err
 		}
 
-		report, err := compareCluster(cluster, baselineOutput, currentOutput, diffOutput, opts.ContextLines)
+		report, err := compareCluster(cluster, baselineOutput, currentOutput, diffOutput, opts.ContextLines, opts.Validate)
 		if err != nil {
 			return nil, "", err
 		}
@@ -211,7 +212,7 @@ func renderCluster(root string, layout config.LayoutConfig, cluster, outputRoot 
 	return nil
 }
 
-func compareCluster(cluster, baselineOutput, currentOutput, diffOutput string, contextLines int) (output.ClusterReport, error) {
+func compareCluster(cluster, baselineOutput, currentOutput, diffOutput string, contextLines int, doValidate bool) (output.ClusterReport, error) {
 	report := output.ClusterReport{Name: cluster}
 
 	chartNames, err := unionDirs(filepath.Join(baselineOutput, cluster), filepath.Join(currentOutput, cluster))
@@ -232,6 +233,8 @@ func compareCluster(cluster, baselineOutput, currentOutput, diffOutput string, c
 		if err != nil {
 			return report, err
 		}
+		schemaResolver := validate.NewSchemaResolver(currentResources)
+		duplicateCounts := resourceIdentityCounts(currentResources)
 		resourceKeys := unionKeys(baselineResources, currentResources)
 		if len(resourceKeys) == 0 {
 			continue
@@ -302,6 +305,15 @@ func compareCluster(cluster, baselineOutput, currentOutput, diffOutput string, c
 				State:     state,
 				Changes:   result.Changes,
 			})
+			validationResult := validate.Result{Status: validate.StatusValid}
+			if doValidate && newOK {
+				validationResult = validate.Validate(validate.Input{
+					Resource:   newResource,
+					Siblings:   currentResources,
+					Duplicates: duplicateCounts,
+					Resolver:   schemaResolver,
+				})
+			}
 
 			chartReport.Resources = append(chartReport.Resources, output.ResourceReport{
 				State:      state,
@@ -311,6 +323,7 @@ func compareCluster(cluster, baselineOutput, currentOutput, diffOutput string, c
 				Result:     result,
 				Semantic:   semanticText,
 				Assessment: assessment,
+				Validation: validationResult,
 			})
 		}
 
@@ -376,6 +389,14 @@ func firstNonEmpty(values ...string) string {
 		}
 	}
 	return ""
+}
+
+func resourceIdentityCounts(resourcesByKey map[string]resources.Resource) map[string]int {
+	counts := map[string]int{}
+	for _, resource := range resourcesByKey {
+		counts[resource.Identity]++
+	}
+	return counts
 }
 
 func fileExists(path string) bool {

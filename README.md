@@ -52,6 +52,7 @@ The posted note contains:
 
 - a top-level review summary with total counts
 - a severity breakdown across changed resources
+- validation error and warning counts
 - short highlights for the highest-severity findings
 - a per-cluster summary table
 - one collapsible section per chart
@@ -59,6 +60,7 @@ The posted note contains:
 - resource-level diff sections inside each chart section
 - semantic diff snippets that highlight the effective Kubernetes changes
 - per-resource severity labels with short human-readable findings
+- validation findings when a rendered resource is structurally invalid, schema-invalid, or semantically suspicious
 
 If there are no effective changes, `møbius comment` updates the sticky note to a short no-change message instead of deleting it.
 
@@ -174,7 +176,8 @@ For each selected cluster, `møbius`:
 5. applies override values from the configured override path
 6. splits the rendered output into individual Kubernetes resources
 7. compares baseline and current resources semantically and as raw text
-8. renders the result as terminal output, markdown, or a GitLab MR note
+8. validates current rendered resources offline using structural checks, embedded schemas, rendered CRD schemas, and semantic validators
+9. renders the result as terminal output, markdown, or a GitLab MR note
 
 ```mermaid
 flowchart TD
@@ -201,6 +204,13 @@ Artifacts are written per chart and per resource:
 - `diff/<cluster>/<chart>/<resource-key>.semantic.txt`
 
 The baseline is the git merge-base between `HEAD` and the configured base ref, not the current tip of the target branch.
+
+Validation is offline-first:
+
+- built-in Kubernetes resources use embedded schema bundles
+- supported platform CRDs can use embedded schema bundles
+- if a matching `CustomResourceDefinition` is rendered in the current chart, its schema takes precedence
+- semantic validators add warnings for suspicious-but-schema-valid configurations
 
 ## Quickstart
 
@@ -232,6 +242,12 @@ Post or update the sticky merge request comment from a GitLab MR pipeline:
 
 ```bash
 ./bin/møbius comment
+```
+
+Disable validation for debugging:
+
+```bash
+./bin/møbius diff --cluster kube-bravo --validate=false
 ```
 
 Persist rendered artifacts and diffs:
@@ -320,6 +336,20 @@ The `comment` subcommand always renders markdown internally and updates a single
 
 - `--comment-mode full|summary|summary+artifacts`
 - `--max-comment-bytes N` to trigger compact fallback for very large notes
+- `--validate=false` to skip offline validation
+
+## Schema Bundles
+
+`møbius` ships embedded schema bundles under [internal/validate/schemas](internal/validate/schemas) and keeps their sources pinned in [schemasources.yaml](schemasources.yaml).
+
+The update workflow is:
+
+```bash
+make schema-sync
+make schema-verify
+```
+
+Use this when adding new bundled schemas or refreshing the schema index after changing the embedded files.
 
 ## Implementation Notes
 
