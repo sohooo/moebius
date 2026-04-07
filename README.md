@@ -344,6 +344,8 @@ The `comment` subcommand always renders markdown internally and updates a single
 
 `møbius` ships embedded schema bundles under [internal/validate/schemas](internal/validate/schemas) and keeps the schema import manifest in [schemasources.yaml](schemasources.yaml).
 
+Release-backed sources are resolved into concrete versions in [schemas.lock.yaml](schemas.lock.yaml). For GitHub-backed sources, `schema-sync` resolves `latest` to the current GitHub release tag and falls back to the latest repository tag when a project does not publish releases.
+
 Runtime stays fully offline:
 
 - `møbius` validates with rendered CRD schemas from the manifests under review when available
@@ -363,7 +365,7 @@ Typical update flow:
 
 1. add or refresh schema source files, or update [schemasources.yaml](schemasources.yaml) with explicit URLs
 2. run `make schema-sync`
-3. review the generated schema diff under [internal/validate/schemas](internal/validate/schemas)
+3. review the generated schema diff under [internal/validate/schemas](internal/validate/schemas) and the resolved versions in [schemas.lock.yaml](schemas.lock.yaml)
 4. run `make schema-verify`
 5. commit the schema updates
 6. build `bin/møbius`

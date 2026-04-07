@@ -1,43 +1,66 @@
 sources:
   - component: kubernetes
     version: v1
-    source_type: file
-    paths:
-      - internal/validate/schemas/kubernetes/v1/*.json
-    note: Repo-local Kubernetes schema bundle source files.
+    source_type: url
+    urls:
+      - https://raw.githubusercontent.com/yannh/kubernetes-json-schema/master/v1.33.2-standalone-strict/deployment-apps-v1.json
+      - https://raw.githubusercontent.com/yannh/kubernetes-json-schema/master/v1.33.2-standalone-strict/job-batch-v1.json
+      - https://raw.githubusercontent.com/yannh/kubernetes-json-schema/master/v1.33.2-standalone-strict/service-v1.json
+      - https://raw.githubusercontent.com/yannh/kubernetes-json-schema/master/v1.33.2-standalone-strict/ingress-networking-v1.json
+    note: Pinned Kubernetes built-in schemas matching the current API dependency.
 
   - component: cloudnative-pg
-    version: v1
-    source_type: file
+    version: latest
+    source_type: github_release
+    repo: cloudnative-pg/cloudnative-pg
     paths:
-      - internal/validate/schemas/platform/cloudnative-pg/v1/*.json
+      - cloudnative-pg-{version_nov}/releases/cnpg-{version_nov}.yaml
 
   - component: cilium
-    version: v1
-    source_type: file
+    version: latest
+    source_type: github_release
+    repo: cilium/cilium
     paths:
-      - internal/validate/schemas/platform/cilium/v1/*.json
+      - cilium-{version_nov}/pkg/k8s/apis/cilium.io/client/crds/v2/*.yaml
+      - cilium-{version_nov}/pkg/k8s/apis/cilium.io/client/crds/v2alpha1/*.yaml
 
   - component: envoy-gateway
-    version: v1
-    source_type: file
-    paths:
-      - internal/validate/schemas/platform/envoy-gateway/v1/*.json
+    version: latest
+    source_type: github_release
+    repo: envoyproxy/gateway
+    asset_name: envoy-gateway-crds.yaml
+
+  - component: gateway-api
+    version: latest
+    source_type: github_release
+    repo: kubernetes-sigs/gateway-api
+    asset_name: standard-install.yaml
 
   - component: openbao
-    version: v1
-    source_type: file
+    version: latest
+    source_type: github_release
+    repo: hashicorp/vault-secrets-operator
     paths:
-      - internal/validate/schemas/platform/openbao/v1/*.json
+      - vault-secrets-operator-{version_nov}/config/crd/bases/*.yaml
+
+  - component: keycloak
+    version: latest
+    source_type: github_release
+    repo: keycloak/keycloak-k8s-resources
+    paths:
+      - keycloak-k8s-resources-{version_nov}/kubernetes/keycloaks.k8s.keycloak.org-v1.yml
+      - keycloak-k8s-resources-{version_nov}/kubernetes/keycloakrealmimports.k8s.keycloak.org-v1.yml
 
   - component: keycloak
     version: v1
     source_type: file
     paths:
-      - internal/validate/schemas/platform/keycloak/v1/*.json
+      - internal/validate/schemas/platform/keycloak/v1/k8s_keycloak_org_v2alpha1_KeycloakClient.json
+    note: Compatibility holdover until KeycloakClient has an upstream CRD source again.
 
   - component: longhorn
-    version: v1
-    source_type: file
+    version: latest
+    source_type: github_release
+    repo: longhorn/longhorn
     paths:
-      - internal/validate/schemas/platform/longhorn/v1/*.json
+      - longhorn-{version_nov}/deploy/longhorn.yaml

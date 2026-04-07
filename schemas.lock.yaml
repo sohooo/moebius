@@ -1,0 +1,46 @@
+sources:
+    - component: kubernetes
+      source_type: url
+      version: v1
+      resolved_version: v1
+    - component: cloudnative-pg
+      source_type: github_release
+      version: latest
+      resolved_version: v1.29.0
+      repo: cloudnative-pg/cloudnative-pg
+    - component: cilium
+      source_type: github_release
+      version: latest
+      resolved_version: v1.19.2
+      repo: cilium/cilium
+    - component: envoy-gateway
+      source_type: github_release
+      version: latest
+      resolved_version: v1.7.1
+      repo: envoyproxy/gateway
+      asset_name: envoy-gateway-crds.yaml
+    - component: gateway-api
+      source_type: github_release
+      version: latest
+      resolved_version: v1.5.1
+      repo: kubernetes-sigs/gateway-api
+      asset_name: standard-install.yaml
+    - component: openbao
+      source_type: github_release
+      version: latest
+      resolved_version: v1.3.0
+      repo: hashicorp/vault-secrets-operator
+    - component: keycloak
+      source_type: github_release
+      version: latest
+      resolved_version: 26.5.7
+      repo: keycloak/keycloak-k8s-resources
+    - component: keycloak
+      source_type: file
+      version: v1
+      resolved_version: v1
+    - component: longhorn
+      source_type: github_release
+      version: latest
+      resolved_version: v1.11.1
+      repo: longhorn/longhorn

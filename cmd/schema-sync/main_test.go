@@ -46,7 +46,7 @@ spec:
 	if err != nil {
 		t.Fatalf("loadManifest: %v", err)
 	}
-	generated, err := generateSchemas(root, manifest)
+	generated, _, err := generateSchemas(root, manifest, schemaLock{}, false)
 	if err != nil {
 		t.Fatalf("generateSchemas: %v", err)
 	}
@@ -79,7 +79,7 @@ sources:
 	if err != nil {
 		t.Fatalf("loadManifest: %v", err)
 	}
-	generated, err := generateSchemas(root, manifest)
+	generated, _, err := generateSchemas(root, manifest, schemaLock{}, false)
 	if err != nil {
 		t.Fatalf("generateSchemas: %v", err)
 	}
@@ -113,6 +113,67 @@ sources:
 	}
 	if len(manifest.Sources) != 1 || manifest.Sources[0].SourceType != "url" {
 		t.Fatalf("unexpected manifest: %#v", manifest)
+	}
+}
+
+func TestLoadManifest_AllowsGitHubReleaseSources(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	writeFile(t, filepath.Join(root, "schemasources.yaml"), `
+sources:
+  - component: demo
+    version: latest
+    source_type: github_release
+    repo: example/project
+    asset_name: crds.yaml
+`)
+
+	manifest, err := loadManifest(filepath.Join(root, "schemasources.yaml"))
+	if err != nil {
+		t.Fatalf("loadManifest: %v", err)
+	}
+	if len(manifest.Sources) != 1 || manifest.Sources[0].SourceType != "github_release" {
+		t.Fatalf("unexpected manifest: %#v", manifest)
+	}
+}
+
+func TestResolvePath_PreservesAbsolutePaths(t *testing.T) {
+	t.Parallel()
+
+	if got, want := resolvePath("/repo", "/tmp/schema.yaml"), "/tmp/schema.yaml"; got != want {
+		t.Fatalf("unexpected path %q want %q", got, want)
+	}
+}
+
+func TestVerifyLockFileDetectsDrift(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	lockPath := filepath.Join(root, "schemas.lock.yaml")
+	if err := writeLockFile(lockPath, schemaLock{
+		Sources: []lockedSource{{
+			Component:       "demo",
+			SourceType:      "github_release",
+			Version:         "latest",
+			ResolvedVersion: "v1.0.0",
+			Repo:            "example/project",
+		}},
+	}); err != nil {
+		t.Fatalf("writeLockFile: %v", err)
+	}
+
+	err := verifyLockFile(lockPath, schemaLock{
+		Sources: []lockedSource{{
+			Component:       "demo",
+			SourceType:      "github_release",
+			Version:         "latest",
+			ResolvedVersion: "v1.0.1",
+			Repo:            "example/project",
+		}},
+	})
+	if err == nil {
+		t.Fatal("expected lock drift error, got nil")
 	}
 }
 

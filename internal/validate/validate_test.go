@@ -271,7 +271,10 @@ func TestValidate_SemanticValidators(t *testing.T) {
 					"apiVersion": "gateway.networking.k8s.io/v1",
 					"kind":       "Gateway",
 					"metadata":   map[string]interface{}{"name": "gw", "namespace": "gw"},
-					"spec":       map[string]interface{}{"listeners": []interface{}{map[string]interface{}{"name": "https", "port": 443, "protocol": "HTTPS"}}},
+					"spec": map[string]interface{}{
+						"gatewayClassName": "envoy",
+						"listeners":        []interface{}{map[string]interface{}{"name": "https", "port": 443, "protocol": "HTTPS"}},
+					},
 				},
 			},
 		},
