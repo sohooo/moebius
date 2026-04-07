@@ -7,10 +7,10 @@ import (
 	"sort"
 	"strings"
 
-	"mobius/internal/cli"
-	"mobius/internal/diff"
-	"mobius/internal/severity"
-	"mobius/internal/validate"
+	"github.com/sohooo/moebius/internal/cli"
+	"github.com/sohooo/moebius/internal/diff"
+	"github.com/sohooo/moebius/internal/severity"
+	"github.com/sohooo/moebius/internal/validate"
 )
 
 const StickyMarker = "<!-- mobius:mr-diff -->"

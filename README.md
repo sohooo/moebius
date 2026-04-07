@@ -10,6 +10,22 @@ Then it compares both rendered results chart by chart and resource by resource, 
 
 > The name comes from *StarCraft*: the Moebius Foundation was a formerly legitimate research group focused on archaeology. It explored sites created by a race older than the protoss, including Research Site KL-2.
 
+## Installation
+
+Install the CLI locally with Go:
+
+```bash
+go install github.com/sohooo/moebius/cmd/mobius@latest
+```
+
+Install a pinned version:
+
+```bash
+go install github.com/sohooo/moebius/cmd/mobius@v0.1.0
+```
+
+This requires a local Go toolchain. For GitLab CI, the container image remains the recommended distribution path.
+
 ## CI Usage
 
 `møbius` is designed to run as a separate tool in a GitLab merge request pipeline, typically from the cluster configuration repository. A common production setup is to build and publish the `møbius` image once, then run that image on a Kubernetes GitLab runner.
@@ -222,6 +238,12 @@ Build the binary:
 make build
 ```
 
+Install the published CLI directly with Go:
+
+```bash
+go install github.com/sohooo/moebius/cmd/mobius@latest
+```
+
 Run the standard verification pass:
 
 ```bash
@@ -372,9 +394,24 @@ Typical update flow:
 
 As long as the schema files are already committed, building `møbius` on-prem only needs the checked-in source tree and Go dependencies.
 
+## Releases
+
+`møbius` is distributed as a versioned Go CLI module at `github.com/sohooo/moebius`.
+
+- local installation uses `go install github.com/sohooo/moebius/cmd/mobius@<version>`
+- release tags should follow semver
+- the current recommended series is `v0.x.y` while CLI behavior and flags are still evolving
+- move to `v1.x.y` only when the CLI surface is intended to be stable
+
+For each release:
+
+1. run `make verify`
+2. create a semver git tag on the default branch
+3. publish the tag so `go install ...@latest` and `go install ...@vX.Y.Z` resolve correctly
+
 ## Implementation Notes
 
-`møbius` is a native Go CLI built to `bin/møbius`.
+`møbius` is a native Go CLI built to `bin/møbius` and published as the Go module `github.com/sohooo/moebius`.
 
 It is self-contained at runtime and uses Go libraries for:
 

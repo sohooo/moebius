@@ -1,4 +1,4 @@
-module mobius
+module github.com/sohooo/moebius
 
 go 1.25.0
 

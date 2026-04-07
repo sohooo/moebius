@@ -10,15 +10,15 @@ import (
 
 	"github.com/go-git/go-git/v5/plumbing/object"
 
-	"mobius/internal/cli"
-	"mobius/internal/config"
-	"mobius/internal/diff"
-	"mobius/internal/gitrepo"
-	"mobius/internal/helmrender"
-	"mobius/internal/output"
-	"mobius/internal/resources"
-	"mobius/internal/severity"
-	"mobius/internal/validate"
+	"github.com/sohooo/moebius/internal/cli"
+	"github.com/sohooo/moebius/internal/config"
+	"github.com/sohooo/moebius/internal/diff"
+	"github.com/sohooo/moebius/internal/gitrepo"
+	"github.com/sohooo/moebius/internal/helmrender"
+	"github.com/sohooo/moebius/internal/output"
+	"github.com/sohooo/moebius/internal/resources"
+	"github.com/sohooo/moebius/internal/severity"
+	"github.com/sohooo/moebius/internal/validate"
 )
 
 func Build(opts cli.Options) ([]output.ClusterReport, string, error) {

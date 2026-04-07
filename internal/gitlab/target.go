@@ -5,7 +5,7 @@ import (
 	"os"
 	"strings"
 
-	"mobius/internal/cli"
+	"github.com/sohooo/moebius/internal/cli"
 )
 
 type Target struct {

@@ -3,7 +3,7 @@ package severity
 import (
 	"testing"
 
-	"mobius/internal/diff"
+	"github.com/sohooo/moebius/internal/diff"
 )
 
 func TestAssess_BaselineKinds(t *testing.T) {

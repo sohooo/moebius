@@ -3,7 +3,7 @@ package validate
 import (
 	"testing"
 
-	"mobius/internal/resources"
+	"github.com/sohooo/moebius/internal/resources"
 )
 
 func TestValidate_StructuralFindings(t *testing.T) {

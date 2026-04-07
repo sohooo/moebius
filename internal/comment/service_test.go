@@ -5,11 +5,11 @@ import (
 	"strings"
 	"testing"
 
-	"mobius/internal/cli"
-	"mobius/internal/diff"
-	"mobius/internal/gitlab"
-	"mobius/internal/output"
-	"mobius/internal/severity"
+	"github.com/sohooo/moebius/internal/cli"
+	"github.com/sohooo/moebius/internal/diff"
+	"github.com/sohooo/moebius/internal/gitlab"
+	"github.com/sohooo/moebius/internal/output"
+	"github.com/sohooo/moebius/internal/severity"
 )
 
 func TestServicePost_CreatesNoteWhenMissing(t *testing.T) {

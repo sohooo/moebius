@@ -8,7 +8,7 @@ import (
 	"strings"
 	"sync"
 
-	"mobius/internal/resources"
+	"github.com/sohooo/moebius/internal/resources"
 
 	"github.com/xeipuuv/gojsonschema"
 )

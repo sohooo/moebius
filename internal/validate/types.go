@@ -1,6 +1,6 @@
 package validate
 
-import "mobius/internal/resources"
+import "github.com/sohooo/moebius/internal/resources"
 
 type Status string
 type Source string

@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"os"
 
-	"mobius/internal/app"
+	"github.com/sohooo/moebius/internal/app"
 )
 
 func main() {

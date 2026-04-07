@@ -8,11 +8,11 @@ import (
 	"fmt"
 	"os"
 
-	"mobius/internal/cli"
-	"mobius/internal/comment"
-	"mobius/internal/diff"
-	"mobius/internal/output"
-	"mobius/internal/report"
+	"github.com/sohooo/moebius/internal/cli"
+	"github.com/sohooo/moebius/internal/comment"
+	"github.com/sohooo/moebius/internal/diff"
+	"github.com/sohooo/moebius/internal/output"
+	"github.com/sohooo/moebius/internal/report"
 )
 
 func Run(args []string) error {

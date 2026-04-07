@@ -7,10 +7,10 @@ import (
 	"os"
 	"strings"
 
-	"mobius/internal/cli"
-	"mobius/internal/diff"
-	"mobius/internal/gitlab"
-	"mobius/internal/output"
+	"github.com/sohooo/moebius/internal/cli"
+	"github.com/sohooo/moebius/internal/diff"
+	"github.com/sohooo/moebius/internal/gitlab"
+	"github.com/sohooo/moebius/internal/output"
 )
 
 type NoteClient interface {

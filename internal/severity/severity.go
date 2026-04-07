@@ -6,7 +6,7 @@ import (
 	"sort"
 	"strings"
 
-	"mobius/internal/diff"
+	"github.com/sohooo/moebius/internal/diff"
 )
 
 type Level string
