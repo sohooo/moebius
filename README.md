@@ -283,7 +283,13 @@ Persist rendered artifacts and diffs:
 Build the container image:
 
 ```bash
-docker build -t mobius:local .
+docker build -t mobius:local --build-arg MOBIUS_VERSION=latest .
+```
+
+Pin the container image to a specific published CLI version:
+
+```bash
+docker build -t mobius:v0.1.0 --build-arg MOBIUS_VERSION=v0.1.0 .
 ```
 
 ## Cluster Layout
@@ -422,4 +428,4 @@ It is self-contained at runtime and uses Go libraries for:
 
 `bin/møbius` is a generated build artifact and is ignored in Git.
 
-The repository also includes a [Dockerfile](Dockerfile) for building a small runtime image that contains only the compiled `møbius` binary and CA certificates.
+The repository also includes a [Dockerfile](Dockerfile) for building a small runtime image that installs the published CLI with `go install` and ships only the resulting `møbius` binary plus CA certificates.
