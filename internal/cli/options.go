@@ -16,6 +16,7 @@ type OutputFormat string
 const (
 	CommandDiff    Command = "diff"
 	CommandComment Command = "comment"
+	CommandVersion Command = "version"
 
 	DiffModeRaw      DiffMode = "raw"
 	DiffModeSemantic DiffMode = "semantic"
@@ -100,7 +101,7 @@ func Parse(args []string, stdout io.Writer) (Options, error) {
 	})
 
 	fs.Usage = func() {
-		fmt.Fprintf(stdout, "Usage:\n  møbius <diff|comment> [options]\n\nOptions:\n")
+		fmt.Fprintf(stdout, "Usage:\n  møbius <diff|comment|version> [options]\n\nOptions:\n")
 		fs.PrintDefaults()
 	}
 
@@ -110,7 +111,7 @@ func Parse(args []string, stdout io.Writer) (Options, error) {
 	}
 
 	switch Command(args[0]) {
-	case CommandDiff, CommandComment:
+	case CommandDiff, CommandComment, CommandVersion:
 		opts.Command = Command(args[0])
 	default:
 		return opts, fmt.Errorf("unknown subcommand %q", args[0])
@@ -127,6 +128,9 @@ func Parse(args []string, stdout io.Writer) (Options, error) {
 	}
 	if opts.MaxCommentBytes < 1024 {
 		return opts, errors.New("--max-comment-bytes must be >= 1024")
+	}
+	if opts.Command == CommandVersion {
+		return opts, nil
 	}
 	if opts.Command == CommandComment {
 		opts.OutputFormat = OutputFormatMarkdown

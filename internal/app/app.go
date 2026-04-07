@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"os"
 
+	"github.com/sohooo/moebius/internal/buildinfo"
 	"github.com/sohooo/moebius/internal/cli"
 	"github.com/sohooo/moebius/internal/comment"
 	"github.com/sohooo/moebius/internal/diff"
@@ -22,6 +23,10 @@ func Run(args []string) error {
 			return nil
 		}
 		return err
+	}
+	if opts.Command == cli.CommandVersion {
+		fmt.Fprint(os.Stdout, buildinfo.String())
+		return nil
 	}
 
 	reports, outputDir, err := report.Build(opts)

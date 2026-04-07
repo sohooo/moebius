@@ -26,6 +26,12 @@ go install github.com/sohooo/moebius/cmd/mobius@v0.1.0
 
 This requires a local Go toolchain. For GitLab CI, the container image remains the recommended distribution path.
 
+Print the installed build metadata:
+
+```bash
+mobius version
+```
+
 ## CI Usage
 
 `møbius` is designed to run as a separate tool in a GitLab merge request pipeline, typically from the cluster configuration repository. A common production setup is to build and publish the `møbius` image once, then run that image on a Kubernetes GitLab runner.
@@ -115,7 +121,7 @@ Default-layout example:
 ```yaml
 mobius-diff:
   stage: test
-  image: registry.example.com/platform/møbius:latest
+  image: ghcr.io/sohooo/moebius:v0.1.0
   tags:
     - k8s
   script:
@@ -139,7 +145,7 @@ Custom-layout example with configuration supplied entirely through CI:
 ```yaml
 mobius-diff:
   stage: test
-  image: registry.example.com/platform/møbius:latest
+  image: ghcr.io/sohooo/moebius:v0.1.0
   tags:
     - k8s
   variables:
@@ -236,6 +242,12 @@ Build the binary:
 
 ```bash
 make build
+```
+
+Show the local build metadata:
+
+```bash
+./bin/møbius version
 ```
 
 Install the published CLI directly with Go:
@@ -405,15 +417,23 @@ As long as the schema files are already committed, building `møbius` on-prem on
 `møbius` is distributed as a versioned Go CLI module at `github.com/sohooo/moebius`.
 
 - local installation uses `go install github.com/sohooo/moebius/cmd/mobius@<version>`
+- container releases are published as `ghcr.io/sohooo/moebius:vX.Y.Z`
+- GitHub releases attach prebuilt CLI archives plus `checksums.txt`
 - release tags should follow semver
 - the current recommended series is `v0.x.y` while CLI behavior and flags are still evolving
 - move to `v1.x.y` only when the CLI surface is intended to be stable
+- `latest` is not published for container images during the `v0` series; use an explicit tag
 
 For each release:
 
-1. run `make verify`
-2. create a semver git tag on the default branch
-3. publish the tag so `go install ...@latest` and `go install ...@vX.Y.Z` resolve correctly
+1. run `make schema-verify`
+2. run `make verify`
+3. create a semver git tag on the default branch
+4. push the tag
+5. confirm the GitHub release was created with binary archives and `checksums.txt`
+6. confirm the GHCR image `ghcr.io/sohooo/moebius:vX.Y.Z` was published
+
+The tag-driven release workflow also runs the verification steps, builds release archives for Linux and Darwin on `amd64` and `arm64`, and publishes the matching GHCR image for the same tag.
 
 ## Implementation Notes
 
@@ -428,4 +448,4 @@ It is self-contained at runtime and uses Go libraries for:
 
 `bin/møbius` is a generated build artifact and is ignored in Git.
 
-The repository also includes a [Dockerfile](Dockerfile) for building a small runtime image that installs the published CLI with `go install` and ships only the resulting `møbius` binary plus CA certificates.
+The repository also includes a [Dockerfile](Dockerfile) for building a small runtime image that installs the published CLI with `go install`, embeds release metadata, and ships only the resulting `møbius` binary plus CA certificates.
