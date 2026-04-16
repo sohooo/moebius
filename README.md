@@ -21,7 +21,7 @@ go install github.com/sohooo/moebius/cmd/mobius@latest
 Install a pinned version:
 
 ```bash
-go install github.com/sohooo/moebius/cmd/mobius@v0.1.0
+go install github.com/sohooo/moebius/cmd/mobius@v0.1.1
 ```
 
 This requires a local Go toolchain. For GitLab CI, the container image remains the recommended distribution path.
@@ -121,7 +121,7 @@ Default-layout example:
 ```yaml
 mobius-diff:
   stage: test
-  image: ghcr.io/sohooo/moebius:v0.1.0
+  image: ghcr.io/sohooo/moebius:v0.1.1
   tags:
     - k8s
   variables:
@@ -148,7 +148,7 @@ Custom-layout example with configuration supplied entirely through CI:
 ```yaml
 mobius-diff:
   stage: test
-  image: ghcr.io/sohooo/moebius:v0.1.0
+  image: ghcr.io/sohooo/moebius:v0.1.1
   tags:
     - k8s
   variables:
@@ -309,7 +309,7 @@ docker build -t mobius:local --build-arg MOBIUS_VERSION=latest .
 Pin the container image to a specific published CLI version:
 
 ```bash
-docker build -t mobius:v0.1.0 --build-arg MOBIUS_VERSION=v0.1.0 .
+docker build -t mobius:v0.1.1 --build-arg MOBIUS_VERSION=v0.1.1 .
 ```
 
 ## Cluster Layout
