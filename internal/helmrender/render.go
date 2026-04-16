@@ -26,8 +26,8 @@ func New(cacheDir string) *Renderer {
 	return &Renderer{cacheDir: cacheDir}
 }
 
-func (r *Renderer) Render(root string, chartRef string, version string, releaseName string, namespace string, overridePath string) (string, error) {
-	ch, err := r.loadChart(root, chartRef, version)
+func (r *Renderer) Render(root string, chartRef string, repoURL string, targetRevision string, releaseName string, namespace string, overridePath string) (string, error) {
+	ch, err := r.loadChart(root, chartRef, repoURL, targetRevision)
 	if err != nil {
 		return "", err
 	}
@@ -55,10 +55,10 @@ func (r *Renderer) Render(root string, chartRef string, version string, releaseN
 	return renderChart(ch, renderValues)
 }
 
-func (r *Renderer) loadChart(root string, chartRef string, version string) (*chart.Chart, error) {
+func (r *Renderer) loadChart(root string, chartRef string, repoURL string, targetRevision string) (*chart.Chart, error) {
 	if strings.HasPrefix(chartRef, "oci://") {
-		if version == "" {
-			return nil, fmt.Errorf("oci chart %q requires version", chartRef)
+		if targetRevision == "" {
+			return nil, fmt.Errorf("oci chart %q requires targetRevision", chartRef)
 		}
 		settings := cli.New()
 		settings.RepositoryConfig = filepath.Join(r.cacheDir, "repositories.yaml")
@@ -73,7 +73,28 @@ func (r *Renderer) loadChart(root string, chartRef string, version string) (*cha
 		}
 		install := action.NewInstall(&action.Configuration{RegistryClient: registryClient})
 		install.SetRegistryClient(registryClient)
-		install.Version = version
+		install.Version = targetRevision
+		chartPath, err := install.ChartPathOptions.LocateChart(chartRef, settings)
+		if err != nil {
+			return nil, err
+		}
+		return loader.Load(chartPath)
+	}
+
+	if repoURL != "" {
+		if targetRevision == "" {
+			return nil, fmt.Errorf("remote chart %q requires targetRevision", chartRef)
+		}
+		settings := cli.New()
+		settings.RepositoryConfig = filepath.Join(r.cacheDir, "repositories.yaml")
+		settings.RepositoryCache = filepath.Join(r.cacheDir, "repository")
+		if err := os.MkdirAll(settings.RepositoryCache, 0o755); err != nil {
+			return nil, err
+		}
+
+		install := action.NewInstall(&action.Configuration{})
+		install.Version = targetRevision
+		install.ChartPathOptions.RepoURL = repoURL
 		chartPath, err := install.ChartPathOptions.LocateChart(chartRef, settings)
 		if err != nil {
 			return nil, err

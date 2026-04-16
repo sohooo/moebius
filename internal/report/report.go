@@ -150,9 +150,9 @@ func prepareBaselineCluster(repo *gitrepo.Repo, mergeBase *object.Commit, layout
 		return err
 	}
 	for _, release := range releases {
-		if strings.HasPrefix(release.Chart, "oci://") {
-			if release.Version == "" {
-				return fmt.Errorf("cluster %q baseline release %q uses OCI chart without version", cluster, release.Name)
+		if release.IsRemoteChart() {
+			if release.TargetRevision == "" {
+				return fmt.Errorf("cluster %q baseline release %q uses remote chart without targetRevision", cluster, release.Name)
 			}
 			continue
 		}
@@ -188,7 +188,8 @@ func renderCluster(root string, layout config.LayoutConfig, cluster, outputRoot 
 		if !fileExists(overridePath) {
 			overridePath = ""
 		}
-		rendered, err := renderer.Render(root, release.Chart, release.Version, release.Name, release.Namespace, overridePath)
+		chartRef := release.ChartReference()
+		rendered, err := renderer.Render(root, chartRef, release.RepoURL, release.TargetRevision, release.Name, release.Namespace, overridePath)
 		if err != nil {
 			return fmt.Errorf("render cluster %q release %q: %w", cluster, release.Name, err)
 		}

@@ -112,11 +112,12 @@ func TestLoadReleasesUsesConfiguredFieldNames(t *testing.T) {
 	root := t.TempDir()
 	layout := Default().Layout
 	layout.Apps.Fields = AppsFieldsConfig{
-		Name:      "release_name",
-		Namespace: "target_namespace",
-		Project:   "argocd_project",
-		Chart:     "chart_ref",
-		Version:   "chart_version",
+		Name:           "release_name",
+		Namespace:      "target_namespace",
+		Project:        "argocd_project",
+		RepoURL:        "repo_url",
+		Chart:          "chart_ref",
+		TargetRevision: "chart_target_revision",
 	}
 
 	clusterDir := ClusterDir(root, layout, "kube-bravo")
@@ -126,8 +127,9 @@ func TestLoadReleasesUsesConfiguredFieldNames(t *testing.T) {
 	writeFile(t, filepath.Join(clusterDir, layout.Apps.File), `- release_name: hello-world
   target_namespace: hello-world
   argocd_project: test
+  repo_url: internal.oci.repo/helm-int
   chart_ref: charts/hello-world
-  chart_version: 0.1.0
+  chart_target_revision: 0.1.0
 `)
 
 	releases, err := LoadReleases(root, layout, "kube-bravo")
@@ -137,8 +139,43 @@ func TestLoadReleasesUsesConfiguredFieldNames(t *testing.T) {
 	if len(releases) != 1 {
 		t.Fatalf("expected one release, got %d", len(releases))
 	}
-	if releases[0].Name != "hello-world" || releases[0].Project != "test" || releases[0].Chart != "charts/hello-world" {
+	if releases[0].Name != "hello-world" || releases[0].Project != "test" || releases[0].Chart != "charts/hello-world" || releases[0].RepoURL != "internal.oci.repo/helm-int" || releases[0].TargetRevision != "0.1.0" {
 		t.Fatalf("unexpected normalized release: %#v", releases[0])
+	}
+}
+
+func TestLoadReleasesRequiresTargetRevisionForRemoteCharts(t *testing.T) {
+	root := t.TempDir()
+	layout := Default().Layout
+	clusterDir := ClusterDir(root, layout, "kube-bravo")
+	if err := os.MkdirAll(clusterDir, 0o755); err != nil {
+		t.Fatalf("MkdirAll: %v", err)
+	}
+	writeFile(t, filepath.Join(clusterDir, layout.Apps.File), `- name: argocd
+  namespace: argocd
+  project: default
+  repoURL: internal.oci.repo/helm-int
+  chart: argo-cd
+`)
+
+	_, err := LoadReleases(root, layout, "kube-bravo")
+	if err == nil {
+		t.Fatal("expected validation error")
+	}
+	if !strings.Contains(err.Error(), "missing targetRevision") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestReleaseChartReferenceComposesOCIRefFromRepoURL(t *testing.T) {
+	release := Release{
+		RepoURL:        "internal.oci.repo/helm-int",
+		Chart:          "argo-cd",
+		TargetRevision: "3.1.0",
+	}
+
+	if got := release.ChartReference(); got != "oci://internal.oci.repo/helm-int/argo-cd" {
+		t.Fatalf("unexpected chart reference: %q", got)
 	}
 }
 

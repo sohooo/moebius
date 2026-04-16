@@ -15,7 +15,7 @@ const EnvConfigYAML = "MOBIUS_CONFIG_YAML"
 
 var placeholderPattern = regexp.MustCompile(`\{([^{}]+)\}`)
 
-var canonicalFields = []string{"name", "namespace", "project", "chart", "version"}
+var canonicalFields = []string{"name", "namespace", "project", "repoURL", "chart", "targetRevision"}
 
 type RepoConfig struct {
 	Layout LayoutConfig `yaml:"layout"`
@@ -35,11 +35,12 @@ type AppsConfig struct {
 }
 
 type AppsFieldsConfig struct {
-	Name      string `yaml:"name"`
-	Namespace string `yaml:"namespace"`
-	Project   string `yaml:"project"`
-	Chart     string `yaml:"chart"`
-	Version   string `yaml:"version"`
+	Name           string `yaml:"name"`
+	Namespace      string `yaml:"namespace"`
+	Project        string `yaml:"project"`
+	RepoURL        string `yaml:"repoURL"`
+	Chart          string `yaml:"chart"`
+	TargetRevision string `yaml:"targetRevision"`
 }
 
 type OverridesConfig struct {
@@ -48,11 +49,12 @@ type OverridesConfig struct {
 }
 
 type Release struct {
-	Name      string
-	Namespace string
-	Project   string
-	Chart     string
-	Version   string
+	Name           string
+	Namespace      string
+	Project        string
+	RepoURL        string
+	Chart          string
+	TargetRevision string
 }
 
 func Default() RepoConfig {
@@ -63,11 +65,12 @@ func Default() RepoConfig {
 				File: "apps.yaml",
 				Kind: "list",
 				Fields: AppsFieldsConfig{
-					Name:      "name",
-					Namespace: "namespace",
-					Project:   "project",
-					Chart:     "chart",
-					Version:   "version",
+					Name:           "name",
+					Namespace:      "namespace",
+					Project:        "project",
+					RepoURL:        "repoURL",
+					Chart:          "chart",
+					TargetRevision: "targetRevision",
 				},
 				Required: []string{"name", "namespace", "chart"},
 			},
@@ -179,11 +182,12 @@ func LoadReleases(root string, layout LayoutConfig, cluster string) ([]Release, 
 	for _, item := range raw {
 		item = normalizeMap(item)
 		release := Release{
-			Name:      stringField(item, fieldMap["name"]),
-			Namespace: stringField(item, fieldMap["namespace"]),
-			Project:   stringField(item, fieldMap["project"]),
-			Chart:     stringField(item, fieldMap["chart"]),
-			Version:   stringField(item, fieldMap["version"]),
+			Name:           stringField(item, fieldMap["name"]),
+			Namespace:      stringField(item, fieldMap["namespace"]),
+			Project:        stringField(item, fieldMap["project"]),
+			RepoURL:        stringField(item, fieldMap["repoURL"]),
+			Chart:          stringField(item, fieldMap["chart"]),
+			TargetRevision: stringField(item, fieldMap["targetRevision"]),
 		}
 		if err := validateRelease(path, layout.Apps.Required, release); err != nil {
 			return nil, err
@@ -207,12 +211,32 @@ func ResolveOverridePath(root string, layout LayoutConfig, cluster string, relea
 
 func (f AppsFieldsConfig) Map() map[string]string {
 	return map[string]string{
-		"name":      f.Name,
-		"namespace": f.Namespace,
-		"project":   f.Project,
-		"chart":     f.Chart,
-		"version":   f.Version,
+		"name":           f.Name,
+		"namespace":      f.Namespace,
+		"project":        f.Project,
+		"repoURL":        f.RepoURL,
+		"chart":          f.Chart,
+		"targetRevision": f.TargetRevision,
 	}
+}
+
+func (r Release) IsRemoteChart() bool {
+	return r.RepoURL != "" || strings.HasPrefix(r.Chart, "oci://")
+}
+
+func (r Release) ChartReference() string {
+	if r.RepoURL == "" {
+		return r.Chart
+	}
+	repoURL := strings.TrimSuffix(r.RepoURL, "/")
+	chart := strings.TrimPrefix(r.Chart, "/")
+	if strings.HasPrefix(repoURL, "http://") || strings.HasPrefix(repoURL, "https://") {
+		return chart
+	}
+	if strings.HasPrefix(repoURL, "oci://") {
+		return repoURL + "/" + chart
+	}
+	return "oci://" + repoURL + "/" + chart
 }
 
 func validatePattern(pattern, field string) error {
@@ -244,11 +268,12 @@ func renderPattern(pattern, cluster string, release Release) string {
 
 func validateRelease(path string, required []string, release Release) error {
 	values := map[string]string{
-		"name":      release.Name,
-		"namespace": release.Namespace,
-		"project":   release.Project,
-		"chart":     release.Chart,
-		"version":   release.Version,
+		"name":           release.Name,
+		"namespace":      release.Namespace,
+		"project":        release.Project,
+		"repoURL":        release.RepoURL,
+		"chart":          release.Chart,
+		"targetRevision": release.TargetRevision,
 	}
 	for _, field := range required {
 		if values[field] != "" {
@@ -258,6 +283,12 @@ func validateRelease(path string, required []string, release Release) error {
 			return fmt.Errorf("release %q missing %s in %s", release.Name, field, path)
 		}
 		return fmt.Errorf("release missing %s in %s", field, path)
+	}
+	if release.RepoURL != "" && release.TargetRevision == "" {
+		return fmt.Errorf("release %q missing targetRevision in %s", release.Name, path)
+	}
+	if strings.HasPrefix(release.Chart, "oci://") && release.TargetRevision == "" {
+		return fmt.Errorf("release %q missing targetRevision in %s", release.Name, path)
 	}
 	return nil
 }

@@ -16,12 +16,13 @@ layout:
       name: name
       namespace: namespace
       project: project
+      repoURL: repoURL
       chart: chart
-      version: version
+      targetRevision: targetRevision
 
     required:
       # Canonical fields that must be present in each release entry.
-      # Valid values are: name, namespace, project, chart, version
+      # Valid values are: name, namespace, project, repoURL, chart, targetRevision
       - name
       - namespace
       - chart

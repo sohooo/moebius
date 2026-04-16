@@ -139,7 +139,7 @@ This job uses the built-in defaults:
 
 - clusters under `clusters/<cluster>`
 - apps file `apps.yaml`
-- release fields `name`, `namespace`, `project`, `chart`, `version`
+- release fields `name`, `namespace`, `project`, `repoURL`, `chart`, `targetRevision`
 - overrides at `overrides/{project}/{name}.yaml`
 - fallback overrides at `overrides/{name}.yaml`
 
@@ -162,8 +162,9 @@ mobius-diff:
             name: release_name
             namespace: target_namespace
             project: argocd_project
+            repoURL: repo_url
             chart: chart_ref
-            version: chart_version
+            targetRevision: chart_target_revision
         overrides:
           path: values/{project}/{name}.yaml
           fallback_path: values/{name}.yaml
@@ -316,7 +317,7 @@ docker build -t mobius:v0.1.0 --build-arg MOBIUS_VERSION=v0.1.0 .
 By default, cluster definitions live under `clusters/`.
 
 - `clusters/<cluster>/apps.yaml` lists the Helm releases for that cluster
-- each release entry can include fields such as `name`, `namespace`, `project`, `chart`, and `version`
+- each release entry can include fields such as `name`, `namespace`, `project`, `repoURL`, `chart`, and `targetRevision`
 - `clusters/<cluster>/overrides/<project>/<chart>.yaml` is the default primary override path
 - `clusters/<cluster>/overrides/<chart>.yaml` is the default fallback override path
 
@@ -353,12 +354,13 @@ Example field remapping:
 ```yaml
 layout:
   apps:
-    fields:
-      name: release_name
-      namespace: target_namespace
-      project: argocd_project
-      chart: chart_ref
-      version: chart_version
+      fields:
+        name: release_name
+        namespace: target_namespace
+        project: argocd_project
+        repoURL: repo_url
+        chart: chart_ref
+        targetRevision: chart_target_revision
 ```
 
 `config.yaml` works well for repo-owned local conventions. `MOBIUS_CONFIG_YAML` works well for decoupled containerized CI usage. `--clusters-dir` remains available as an explicit override for `layout.clusters_dir`.
