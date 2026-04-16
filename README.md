@@ -106,7 +106,7 @@ For very large reports, `møbius` can automatically fall back to a compact summa
 The job environment should:
 
 - fetch enough git history for merge-base calculation
-- make the target branch ref, usually `master`, available locally
+- make the merge request target branch ref available locally before running `møbius`
 - provide the repository checkout
 - provide `CI_PROJECT_ID`, `CI_MERGE_REQUEST_IID`, and `CI_JOB_TOKEN`
 - provide either `CI_API_V4_URL` or `CI_SERVER_URL`
@@ -124,8 +124,11 @@ mobius-diff:
   image: ghcr.io/sohooo/moebius:v0.1.0
   tags:
     - k8s
+  variables:
+    GIT_DEPTH: "0"
   script:
-    - møbius comment --output-dir .mobius-out
+    - git fetch origin "${CI_MERGE_REQUEST_TARGET_BRANCH_NAME}:${CI_MERGE_REQUEST_TARGET_BRANCH_NAME}"
+    - møbius comment --base-ref "${CI_MERGE_REQUEST_TARGET_BRANCH_NAME}" --output-dir .mobius-out
   artifacts:
     when: always
     paths:
@@ -149,6 +152,7 @@ mobius-diff:
   tags:
     - k8s
   variables:
+    GIT_DEPTH: "0"
     MOBIUS_CONFIG_YAML: |
       layout:
         clusters_dir: environments
@@ -164,12 +168,15 @@ mobius-diff:
           path: values/{project}/{name}.yaml
           fallback_path: values/{name}.yaml
   script:
-    - møbius comment --output-dir .mobius-out
+    - git fetch origin "${CI_MERGE_REQUEST_TARGET_BRANCH_NAME}:${CI_MERGE_REQUEST_TARGET_BRANCH_NAME}"
+    - møbius comment --base-ref "${CI_MERGE_REQUEST_TARGET_BRANCH_NAME}" --output-dir .mobius-out
   artifacts:
     when: always
     paths:
       - .mobius-out/
 ```
+
+The explicit `git fetch` is important in GitLab CI. Merge request jobs often run in a detached checkout that does not include a local ref for the target branch, so `møbius` cannot resolve the default base ref unless that branch is fetched first.
 
 Configuration precedence is:
 
