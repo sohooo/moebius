@@ -13,6 +13,7 @@ type DiffMode string
 type CommentMode string
 type OutputFormat string
 type RenderErrorMode string
+type DuplicateKeyMode string
 
 const (
 	CommandDiff    Command = "diff"
@@ -32,6 +33,9 @@ const (
 
 	RenderErrorModeFail            RenderErrorMode = "fail"
 	RenderErrorModeWarnSkipRelease RenderErrorMode = "warn-skip-release"
+
+	DuplicateKeyModeError        DuplicateKeyMode = "error"
+	DuplicateKeyModeWarnLastWins DuplicateKeyMode = "warn-last-wins"
 )
 
 type Options struct {
@@ -48,6 +52,7 @@ type Options struct {
 	OutputFormat    OutputFormat
 	Validate        bool
 	RenderErrorMode RenderErrorMode
+	DuplicateKeyMode DuplicateKeyMode
 
 	ProjectID       string
 	MergeRequestIID string
@@ -64,6 +69,7 @@ func Parse(args []string, stdout io.Writer) (Options, error) {
 	opts.OutputFormat = OutputFormatPlain
 	opts.Validate = true
 	opts.RenderErrorMode = RenderErrorModeFail
+	opts.DuplicateKeyMode = DuplicateKeyModeError
 
 	fs := flag.NewFlagSet("møbius", flag.ContinueOnError)
 	fs.SetOutput(stdout)
@@ -112,6 +118,15 @@ func Parse(args []string, stdout io.Writer) (Options, error) {
 			return nil
 		default:
 			return fmt.Errorf("invalid render error mode %q", v)
+		}
+	})
+	fs.Func("duplicate-key-mode", "Duplicate YAML key mode: error or warn-last-wins", func(v string) error {
+		switch DuplicateKeyMode(v) {
+		case DuplicateKeyModeError, DuplicateKeyModeWarnLastWins:
+			opts.DuplicateKeyMode = DuplicateKeyMode(v)
+			return nil
+		default:
+			return fmt.Errorf("invalid duplicate key mode %q", v)
 		}
 	})
 

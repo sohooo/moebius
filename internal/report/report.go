@@ -22,6 +22,7 @@ import (
 )
 
 const renderWarningFilename = "render-warning.txt"
+const renderNoticeFilename = "render-notices.txt"
 
 func Build(opts cli.Options) ([]output.ClusterReport, string, error) {
 	repo, err := gitrepo.Open(".")
@@ -105,10 +106,10 @@ func Build(opts cli.Options) ([]output.ClusterReport, string, error) {
 		if err := prepareBaselineCluster(repo, mergeBase, layout, cluster, baselineRoot); err != nil {
 			return nil, "", err
 		}
-		if err := renderCluster(repo.Root(), layout, cluster, "current", currentOutput, renderer, opts.RenderErrorMode); err != nil {
+		if err := renderCluster(repo.Root(), layout, cluster, "current", currentOutput, renderer, opts.RenderErrorMode, opts.DuplicateKeyMode); err != nil {
 			return nil, "", err
 		}
-		if err := renderCluster(baselineRoot, layout, cluster, "baseline", baselineOutput, renderer, opts.RenderErrorMode); err != nil {
+		if err := renderCluster(baselineRoot, layout, cluster, "baseline", baselineOutput, renderer, opts.RenderErrorMode, opts.DuplicateKeyMode); err != nil {
 			return nil, "", err
 		}
 
@@ -171,7 +172,7 @@ func prepareBaselineCluster(repo *gitrepo.Repo, mergeBase *object.Commit, layout
 	return nil
 }
 
-func renderCluster(root string, layout config.LayoutConfig, cluster, state, outputRoot string, renderer *helmrender.Renderer, mode cli.RenderErrorMode) error {
+func renderCluster(root string, layout config.LayoutConfig, cluster, state, outputRoot string, renderer *helmrender.Renderer, mode cli.RenderErrorMode, duplicateKeyMode cli.DuplicateKeyMode) error {
 	appsPath := config.AppsPath(root, layout, cluster)
 	if !fileExists(appsPath) {
 		return nil
@@ -208,7 +209,10 @@ func renderCluster(root string, layout config.LayoutConfig, cluster, state, outp
 		if err := os.WriteFile(renderedPath, []byte(rendered), 0o644); err != nil {
 			return err
 		}
-		if _, err := resources.SplitRendered(rendered, resourceDir); err != nil {
+		_, notices, err := resources.SplitRendered(rendered, resourceDir, resources.SplitOptions{
+			DuplicateKeyMode: optsDuplicateMode(duplicateKeyMode),
+		})
+		if err != nil {
 			message := fmt.Sprintf("cluster %q release %q chart %q produced invalid %s rendered YAML (rendered manifest: %s): %v", cluster, release.Name, chartRef, state, renderedPath, err)
 			if mode == cli.RenderErrorModeWarnSkipRelease {
 				if err := os.WriteFile(filepath.Join(chartDir, renderWarningFilename), []byte(message+"\n"), 0o644); err != nil {
@@ -217,6 +221,15 @@ func renderCluster(root string, layout config.LayoutConfig, cluster, state, outp
 				continue
 			}
 			return fmt.Errorf("%s", message)
+		}
+		if len(notices) > 0 {
+			lines := make([]string, 0, len(notices))
+			for _, notice := range notices {
+				lines = append(lines, fmt.Sprintf("cluster %q release %q chart %q %s render warning: %s", cluster, release.Name, chartRef, state, notice))
+			}
+			if err := os.WriteFile(filepath.Join(chartDir, renderNoticeFilename), []byte(strings.Join(lines, "\n")+"\n"), 0o644); err != nil {
+				return err
+			}
 		}
 	}
 	return nil
@@ -238,6 +251,7 @@ func compareCluster(cluster, baselineOutput, currentOutput, diffOutput string, c
 			strings.TrimSpace(readFirstLine(filepath.Join(currentChartDir, renderWarningFilename))),
 			strings.TrimSpace(readFirstLine(filepath.Join(baselineChartDir, renderWarningFilename))),
 		)
+		renderNotices := append(readLines(filepath.Join(currentChartDir, renderNoticeFilename)), readLines(filepath.Join(baselineChartDir, renderNoticeFilename))...)
 
 		baselineResources, err := resources.LoadDir(filepath.Join(baselineChartDir, "resources"))
 		if err != nil {
@@ -254,7 +268,7 @@ func compareCluster(cluster, baselineOutput, currentOutput, diffOutput string, c
 			continue
 		}
 
-		chartReport := output.ChartReport{Name: chartName, Namespace: namespace, RenderWarning: renderWarning}
+		chartReport := output.ChartReport{Name: chartName, Namespace: namespace, RenderWarning: renderWarning, Warnings: renderNotices}
 		chartDiffDir := filepath.Join(diffOutput, cluster, chartName)
 		if err := os.MkdirAll(chartDiffDir, 0o755); err != nil {
 			return report, err
@@ -377,6 +391,30 @@ func joinNonEmpty(parts ...string) string {
 		out = append(out, strings.TrimSpace(part))
 	}
 	return strings.Join(out, " | ")
+}
+
+func readLines(path string) []string {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil
+	}
+	lines := strings.Split(strings.ReplaceAll(string(data), "\r\n", "\n"), "\n")
+	var out []string
+	for _, line := range lines {
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
+		out = append(out, line)
+	}
+	return out
+}
+
+func optsDuplicateMode(mode cli.DuplicateKeyMode) resources.DuplicateKeyMode {
+	if mode == cli.DuplicateKeyModeWarnLastWins {
+		return resources.DuplicateKeyModeWarnLastWins
+	}
+	return resources.DuplicateKeyModeError
 }
 
 func unionKeys(left, right map[string]resources.Resource) []string {

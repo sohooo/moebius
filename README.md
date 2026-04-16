@@ -189,6 +189,19 @@ script:
 
 In that mode, `møbius` keeps the raw `rendered.yaml`, skips only the broken release, and marks the report as incomplete with a visible render warning.
 
+If a third-party chart emits duplicate YAML keys and you need `møbius` to accept that output with a documented "last key wins" fallback, use:
+
+```yaml
+script:
+  - git fetch origin "${CI_MERGE_REQUEST_TARGET_BRANCH_NAME}:${CI_MERGE_REQUEST_TARGET_BRANCH_NAME}"
+  - møbius comment \
+      --base-ref "${CI_MERGE_REQUEST_TARGET_BRANCH_NAME}" \
+      --duplicate-key-mode warn-last-wins \
+      --output-dir .mobius-out
+```
+
+In that mode, `møbius` keeps parsing the rendered manifest stream, uses the last duplicate mapping value, and records a warning in stdout and the MR note so the report is explicitly marked as non-strict.
+
 Configuration precedence is:
 
 1. built-in defaults
@@ -388,6 +401,7 @@ layout:
 | `--diff-mode raw\|semantic\|both` | Select raw diff, semantic diff, or both | `semantic` |
 | `--output-format plain\|markdown` | Select terminal output format | `plain` |
 | `--render-error-mode fail\|warn-skip-release` | Fail on invalid rendered YAML, or warn and skip only the broken release | `fail` |
+| `--duplicate-key-mode error\|warn-last-wins` | Fail on duplicate YAML mapping keys, or accept them with a warning and last-key-wins semantics | `error` |
 | `--project-id` | Override GitLab project ID for `comment` mode | `CI_PROJECT_ID` |
 | `--mr-iid` | Override GitLab MR IID for `comment` mode | `CI_MERGE_REQUEST_IID` |
 | `--gitlab-base-url` | Override GitLab API base URL for `comment` mode | `CI_API_V4_URL` or `CI_SERVER_URL` |

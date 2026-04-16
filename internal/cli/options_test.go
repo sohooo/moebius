@@ -38,3 +38,13 @@ func TestParseRenderErrorMode(t *testing.T) {
 		t.Fatalf("expected warn-skip-release, got %q", opts.RenderErrorMode)
 	}
 }
+
+func TestParseDuplicateKeyMode(t *testing.T) {
+	opts, err := Parse([]string{"comment", "--duplicate-key-mode", "warn-last-wins"}, &bytes.Buffer{})
+	if err != nil {
+		t.Fatalf("Parse returned error: %v", err)
+	}
+	if opts.DuplicateKeyMode != DuplicateKeyModeWarnLastWins {
+		t.Fatalf("expected warn-last-wins, got %q", opts.DuplicateKeyMode)
+	}
+}

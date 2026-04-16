@@ -2,10 +2,12 @@
 package resources
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"os"
 	"path/filepath"
+	"strconv"
 	"sort"
 	"strings"
 
@@ -21,6 +23,33 @@ type Resource struct {
 	Namespace  string
 	Path       string
 	Value      interface{}
+}
+
+type DuplicateKeyMode string
+
+const (
+	DuplicateKeyModeError        DuplicateKeyMode = "error"
+	DuplicateKeyModeWarnLastWins DuplicateKeyMode = "warn-last-wins"
+)
+
+type SplitOptions struct {
+	DuplicateKeyMode DuplicateKeyMode
+}
+
+type DuplicateKeyError struct {
+	Document    int
+	Key         string
+	Line        int
+	PreviousLine int
+	Path        string
+}
+
+func (e DuplicateKeyError) Error() string {
+	path := e.Path
+	if path == "" {
+		path = e.Key
+	}
+	return fmt.Sprintf("document %d: mapping key %q already defined at line %d (line %d, path %s)", e.Document, e.Key, e.PreviousLine, e.Line, path)
 }
 
 func LoadFile(path string) (Resource, error) {
@@ -70,22 +99,31 @@ func LoadDir(resourceDir string) (map[string]Resource, error) {
 	return out, nil
 }
 
-func SplitRendered(rendered string, resourceDir string) ([]Resource, error) {
+func SplitRendered(rendered string, resourceDir string, opts SplitOptions) ([]Resource, []string, error) {
 	if err := os.MkdirAll(resourceDir, 0o755); err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	decoder := yaml.NewDecoder(strings.NewReader(rendered))
 	var out []Resource
+	var warnings []string
 	index := 0
 	identityCounts := map[string]int{}
 	for {
-		var value interface{}
-		if err := decoder.Decode(&value); err != nil {
+		var doc yaml.Node
+		if err := decoder.Decode(&doc); err != nil {
 			if err == io.EOF {
 				break
 			}
-			return nil, err
+			return nil, nil, err
 		}
+		if len(doc.Content) == 0 {
+			continue
+		}
+		value, docWarnings, err := nodeValue(doc.Content[0], opts.DuplicateKeyMode, "", index+1)
+		if err != nil {
+			return nil, nil, err
+		}
+		warnings = append(warnings, docWarnings...)
 		if isZeroYAMLDocument(value) {
 			continue
 		}
@@ -110,10 +148,10 @@ func SplitRendered(rendered string, resourceDir string) ([]Resource, error) {
 		path := filepath.Join(resourceDir, key+".yaml")
 		data, err := yaml.Marshal(value)
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 		if err := os.WriteFile(path, data, 0o644); err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 		out = append(out, Resource{
 			Key:        key,
@@ -128,7 +166,7 @@ func SplitRendered(rendered string, resourceDir string) ([]Resource, error) {
 		index++
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].Key < out[j].Key })
-	return out, nil
+	return out, warnings, nil
 }
 
 func metadata(value interface{}) (apiVersion string, kind string, name string, namespace string) {
@@ -187,6 +225,80 @@ func normalize(value interface{}) interface{} {
 	default:
 		return typed
 	}
+}
+
+func nodeValue(node *yaml.Node, mode DuplicateKeyMode, path string, document int) (interface{}, []string, error) {
+	switch node.Kind {
+	case yaml.DocumentNode:
+		if len(node.Content) == 0 {
+			return nil, nil, nil
+		}
+		return nodeValue(node.Content[0], mode, path, document)
+	case yaml.MappingNode:
+		out := map[string]interface{}{}
+		seenLines := map[string]int{}
+		var warnings []string
+		for i := 0; i < len(node.Content); i += 2 {
+			keyNode := node.Content[i]
+			valueNode := node.Content[i+1]
+			key := keyNode.Value
+			childPath := joinPath(path, key)
+			value, childWarnings, err := nodeValue(valueNode, mode, childPath, document)
+			if err != nil {
+				return nil, nil, err
+			}
+			warnings = append(warnings, childWarnings...)
+			if previousLine, ok := seenLines[key]; ok {
+				dupErr := DuplicateKeyError{
+					Document:     document,
+					Key:          key,
+					Line:         keyNode.Line,
+					PreviousLine: previousLine,
+					Path:         childPath,
+				}
+				if mode == DuplicateKeyModeError {
+					return nil, nil, dupErr
+				}
+				warnings = append(warnings, fmt.Sprintf("document %d: duplicate key %q at line %d overrides line %d (%s)", document, key, keyNode.Line, previousLine, childPath))
+			}
+			seenLines[key] = keyNode.Line
+			out[key] = value
+		}
+		return out, warnings, nil
+	case yaml.SequenceNode:
+		out := make([]interface{}, 0, len(node.Content))
+		var warnings []string
+		for i, child := range node.Content {
+			value, childWarnings, err := nodeValue(child, mode, joinPath(path, "["+strconv.Itoa(i)+"]"), document)
+			if err != nil {
+				return nil, nil, err
+			}
+			warnings = append(warnings, childWarnings...)
+			out = append(out, value)
+		}
+		return out, warnings, nil
+	case yaml.AliasNode:
+		if node.Alias == nil {
+			return nil, nil, errors.New("yaml alias without target")
+		}
+		return nodeValue(node.Alias, mode, path, document)
+	default:
+		var out interface{}
+		if err := node.Decode(&out); err != nil {
+			return nil, nil, err
+		}
+		return normalize(out), nil, nil
+	}
+}
+
+func joinPath(base, part string) string {
+	if base == "" {
+		return part
+	}
+	if strings.HasPrefix(part, "[") {
+		return base + part
+	}
+	return base + "." + part
 }
 
 func fallback(value, defaultValue string) string {

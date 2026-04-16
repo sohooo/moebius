@@ -116,7 +116,7 @@ func normalizeNoteBody(body string) string {
 func commentStatus(reports []output.ClusterReport) string {
 	for _, report := range reports {
 		for _, chart := range report.Charts {
-			if chart.RenderWarning != "" {
+			if chart.RenderWarning != "" || len(chart.Warnings) > 0 {
 				return "warnings detected"
 			}
 		}

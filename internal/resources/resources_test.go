@@ -19,7 +19,7 @@ metadata:
   name: kube-bravo
 `
 
-	out, err := SplitRendered(rendered, dir)
+	out, _, err := SplitRendered(rendered, dir, SplitOptions{})
 	if err != nil {
 		t.Fatalf("SplitRendered returned error: %v", err)
 	}
@@ -50,7 +50,7 @@ metadata:
   namespace: demo
 `
 
-	out, err := SplitRendered(rendered, dir)
+	out, _, err := SplitRendered(rendered, dir, SplitOptions{})
 	if err != nil {
 		t.Fatalf("SplitRendered returned error: %v", err)
 	}
@@ -62,5 +62,33 @@ metadata:
 	}
 	if out[0].Key == out[1].Key {
 		t.Fatalf("expected duplicate resources to use distinct keys")
+	}
+}
+
+func TestSplitRendered_WarnLastWinsForDuplicateMappingKeys(t *testing.T) {
+	dir := t.TempDir()
+	rendered := `apiVersion: v1
+kind: Service
+metadata:
+  name: demo
+  annotations:
+    prometheus.io/scrape: "true"
+    prometheus.io/scrape: "false"
+`
+
+	out, warnings, err := SplitRendered(rendered, dir, SplitOptions{DuplicateKeyMode: DuplicateKeyModeWarnLastWins})
+	if err != nil {
+		t.Fatalf("SplitRendered returned error: %v", err)
+	}
+	if len(out) != 1 {
+		t.Fatalf("expected one resource, got %d", len(out))
+	}
+	metadata := out[0].Value.(map[string]interface{})["metadata"].(map[string]interface{})
+	annotations := metadata["annotations"].(map[string]interface{})
+	if annotations["prometheus.io/scrape"] != "false" {
+		t.Fatalf("expected last value to win, got %#v", annotations["prometheus.io/scrape"])
+	}
+	if len(warnings) == 0 {
+		t.Fatal("expected duplicate-key warning")
 	}
 }
