@@ -23,6 +23,7 @@ import (
 
 const renderWarningFilename = "render-warning.txt"
 const renderNoticeFilename = "render-notices.txt"
+const artifactIndexFilename = "index.md"
 
 func Build(opts cli.Options) ([]output.ClusterReport, string, error) {
 	repo, err := gitrepo.Open(".")
@@ -86,13 +87,18 @@ func Build(opts cli.Options) ([]output.ClusterReport, string, error) {
 	currentOutput := filepath.Join(outputDir, "current")
 	baselineOutput := filepath.Join(outputDir, "baseline")
 	diffOutput := filepath.Join(outputDir, "diff")
-	for _, dir := range []string{currentOutput, baselineOutput, diffOutput} {
+	errorsOutput := filepath.Join(outputDir, "errors")
+	warningsOutput := filepath.Join(outputDir, "warnings")
+	for _, dir := range []string{currentOutput, baselineOutput, diffOutput, errorsOutput, warningsOutput} {
 		if err := os.MkdirAll(dir, 0o755); err != nil {
 			return nil, "", err
 		}
 	}
 
 	var reports []output.ClusterReport
+	defer func() {
+		_ = writeArtifactIndex(outputDir, reports)
+	}()
 	for _, cluster := range clusters {
 		currentExists := fileExists(config.AppsPath(repo.Root(), layout, cluster))
 		baselineExists, err := repo.PathExistsAtCommit(mergeBase, filepath.ToSlash(filepath.Join(layout.ClustersDir, cluster, layout.Apps.File)))
@@ -214,6 +220,9 @@ func renderCluster(root string, layout config.LayoutConfig, cluster, state, outp
 		})
 		if err != nil {
 			message := fmt.Sprintf("cluster %q release %q chart %q produced invalid %s rendered YAML (rendered manifest: %s): %v", cluster, release.Name, chartRef, state, renderedPath, err)
+			if writeErr := writeArtifactMessage(filepath.Join(filepath.Dir(outputRoot), "errors"), state, cluster, release.Name, []string{message}); writeErr != nil {
+				return writeErr
+			}
 			if mode == cli.RenderErrorModeWarnSkipRelease {
 				if err := os.WriteFile(filepath.Join(chartDir, renderWarningFilename), []byte(message+"\n"), 0o644); err != nil {
 					return err
@@ -228,6 +237,9 @@ func renderCluster(root string, layout config.LayoutConfig, cluster, state, outp
 				lines = append(lines, fmt.Sprintf("cluster %q release %q chart %q %s render warning: %s", cluster, release.Name, chartRef, state, notice))
 			}
 			if err := os.WriteFile(filepath.Join(chartDir, renderNoticeFilename), []byte(strings.Join(lines, "\n")+"\n"), 0o644); err != nil {
+				return err
+			}
+			if err := writeArtifactMessage(filepath.Join(filepath.Dir(outputRoot), "warnings"), state, cluster, release.Name, lines); err != nil {
 				return err
 			}
 		}
@@ -264,7 +276,7 @@ func compareCluster(cluster, baselineOutput, currentOutput, diffOutput string, c
 		schemaResolver := validate.NewSchemaResolver(currentResources)
 		duplicateCounts := resourceIdentityCounts(currentResources)
 		resourceKeys := unionKeys(baselineResources, currentResources)
-		if len(resourceKeys) == 0 && renderWarning == "" {
+		if len(resourceKeys) == 0 && renderWarning == "" && len(renderNotices) == 0 {
 			continue
 		}
 
@@ -355,7 +367,7 @@ func compareCluster(cluster, baselineOutput, currentOutput, diffOutput string, c
 			})
 		}
 
-		if len(chartReport.Resources) > 0 || chartReport.RenderWarning != "" {
+		if len(chartReport.Resources) > 0 || chartReport.RenderWarning != "" || len(chartReport.Warnings) > 0 {
 			report.Charts = append(report.Charts, chartReport)
 		}
 	}
@@ -465,4 +477,76 @@ func resourceIdentityCounts(resourcesByKey map[string]resources.Resource) map[st
 func fileExists(path string) bool {
 	_, err := os.Stat(path)
 	return err == nil
+}
+
+func writeArtifactMessage(dir, state, cluster, release string, lines []string) error {
+	if len(lines) == 0 {
+		return nil
+	}
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return err
+	}
+	name := fmt.Sprintf("%s--%s--%s.txt", state, cluster, release)
+	return os.WriteFile(filepath.Join(dir, name), []byte(strings.Join(lines, "\n")+"\n"), 0o644)
+}
+
+func writeArtifactIndex(outputDir string, reports []output.ClusterReport) error {
+	if outputDir == "" {
+		return nil
+	}
+	var b strings.Builder
+	fmt.Fprintln(&b, "# møbius Artifacts")
+	fmt.Fprintln(&b)
+	fmt.Fprintln(&b, "Artifact layout:")
+	fmt.Fprintln(&b, "- `current/`: current rendered manifests and split resources")
+	fmt.Fprintln(&b, "- `baseline/`: merge-base rendered manifests and split resources")
+	fmt.Fprintln(&b, "- `diff/`: raw and semantic per-resource diffs")
+	fmt.Fprintln(&b, "- `errors/`: render failures persisted even in hard-fail mode")
+	fmt.Fprintln(&b, "- `warnings/`: non-fatal render warnings such as permissive duplicate-key parsing")
+	fmt.Fprintln(&b)
+
+	errors := listArtifactFiles(filepath.Join(outputDir, "errors"))
+	warnings := listArtifactFiles(filepath.Join(outputDir, "warnings"))
+	fmt.Fprintf(&b, "## Summary\n\n- Clusters with report output: %d\n- Error artifacts: %d\n- Warning artifacts: %d\n\n", len(reports), len(errors), len(warnings))
+	if len(reports) > 0 {
+		fmt.Fprintln(&b, "## Cluster Reports")
+		fmt.Fprintln(&b)
+		for _, report := range reports {
+			fmt.Fprintf(&b, "- `%s`: %d chart(s), added %d, removed %d, changed %d\n", report.Name, len(report.Charts), report.Added, report.Removed, report.Changed)
+		}
+		fmt.Fprintln(&b)
+	}
+	if len(errors) > 0 {
+		fmt.Fprintln(&b, "## Error Artifacts")
+		fmt.Fprintln(&b)
+		for _, name := range errors {
+			fmt.Fprintf(&b, "- `errors/%s`\n", name)
+		}
+		fmt.Fprintln(&b)
+	}
+	if len(warnings) > 0 {
+		fmt.Fprintln(&b, "## Warning Artifacts")
+		fmt.Fprintln(&b)
+		for _, name := range warnings {
+			fmt.Fprintf(&b, "- `warnings/%s`\n", name)
+		}
+		fmt.Fprintln(&b)
+	}
+	return os.WriteFile(filepath.Join(outputDir, artifactIndexFilename), []byte(b.String()), 0o644)
+}
+
+func listArtifactFiles(dir string) []string {
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return nil
+	}
+	names := make([]string, 0, len(entries))
+	for _, entry := range entries {
+		if entry.IsDir() {
+			continue
+		}
+		names = append(names, entry.Name())
+	}
+	sort.Strings(names)
+	return names
 }

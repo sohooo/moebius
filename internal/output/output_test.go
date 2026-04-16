@@ -92,7 +92,7 @@ func TestRenderCommentBody_IncludesRenderWarnings(t *testing.T) {
 	if !strings.Contains(body, "render-warning") {
 		t.Fatalf("expected render warning highlight in body, got %s", body)
 	}
-	if !strings.Contains(body, "Render warnings: 1 skipped release") {
+	if !strings.Contains(body, "Render warnings:** 1 skipped release(s)") {
 		t.Fatalf("expected render warning summary in body, got %s", body)
 	}
 }

@@ -189,6 +189,14 @@ script:
 
 In that mode, `møbius` keeps the raw `rendered.yaml`, skips only the broken release, and marks the report as incomplete with a visible render warning.
 
+When `--output-dir .mobius-out` is used, `møbius` also writes:
+
+- `.mobius-out/index.md` with a compact artifact overview
+- `.mobius-out/errors/<state>--<cluster>--<release>.txt` for hard render failures
+- `.mobius-out/warnings/<state>--<cluster>--<release>.txt` for non-fatal render warnings
+
+This makes the failing release and preserved `rendered.yaml` path discoverable from CI artifacts even when the command exits non-zero.
+
 If a third-party chart emits duplicate YAML keys and you need `møbius` to accept that output with a documented "last key wins" fallback, use:
 
 ```yaml
