@@ -67,6 +67,36 @@ func TestRenderCommentBody_SummaryMode(t *testing.T) {
 	}
 }
 
+func TestRenderCommentBody_IncludesRenderWarnings(t *testing.T) {
+	report := ClusterReport{
+		Name:    "kube-bravo",
+		Added:   0,
+		Removed: 0,
+		Changed: 0,
+		Charts: []ChartReport{
+			{
+				Name:          "argocd",
+				Namespace:     "argocd",
+				RenderWarning: `cluster "kube-bravo" release "argocd" chart "oci://internal.oci.repo/helm-int/argo-cd" produced invalid current rendered YAML`,
+			},
+		},
+	}
+
+	body, err := RenderCommentBody([]ClusterReport{report}, diff.ModeSemantic, NoteMetadata{CommitSHA: "deadbeef"})
+	if err != nil {
+		t.Fatalf("RenderCommentBody returned error: %v", err)
+	}
+	if !strings.Contains(body, "warnings detected") {
+		t.Fatalf("expected warnings status in body, got %s", body)
+	}
+	if !strings.Contains(body, "render-warning") {
+		t.Fatalf("expected render warning highlight in body, got %s", body)
+	}
+	if !strings.Contains(body, "Render warnings: 1 skipped release") {
+		t.Fatalf("expected render warning summary in body, got %s", body)
+	}
+}
+
 func sampleClusterReport() ClusterReport {
 	change := diff.Change{
 		State: "changed",

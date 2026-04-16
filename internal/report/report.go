@@ -21,6 +21,8 @@ import (
 	"github.com/sohooo/moebius/internal/validate"
 )
 
+const renderWarningFilename = "render-warning.txt"
+
 func Build(opts cli.Options) ([]output.ClusterReport, string, error) {
 	repo, err := gitrepo.Open(".")
 	if err != nil {
@@ -103,10 +105,10 @@ func Build(opts cli.Options) ([]output.ClusterReport, string, error) {
 		if err := prepareBaselineCluster(repo, mergeBase, layout, cluster, baselineRoot); err != nil {
 			return nil, "", err
 		}
-		if err := renderCluster(repo.Root(), layout, cluster, currentOutput, renderer); err != nil {
+		if err := renderCluster(repo.Root(), layout, cluster, "current", currentOutput, renderer, opts.RenderErrorMode); err != nil {
 			return nil, "", err
 		}
-		if err := renderCluster(baselineRoot, layout, cluster, baselineOutput, renderer); err != nil {
+		if err := renderCluster(baselineRoot, layout, cluster, "baseline", baselineOutput, renderer, opts.RenderErrorMode); err != nil {
 			return nil, "", err
 		}
 
@@ -169,7 +171,7 @@ func prepareBaselineCluster(repo *gitrepo.Repo, mergeBase *object.Commit, layout
 	return nil
 }
 
-func renderCluster(root string, layout config.LayoutConfig, cluster, outputRoot string, renderer *helmrender.Renderer) error {
+func renderCluster(root string, layout config.LayoutConfig, cluster, state, outputRoot string, renderer *helmrender.Renderer, mode cli.RenderErrorMode) error {
 	appsPath := config.AppsPath(root, layout, cluster)
 	if !fileExists(appsPath) {
 		return nil
@@ -207,7 +209,14 @@ func renderCluster(root string, layout config.LayoutConfig, cluster, outputRoot 
 			return err
 		}
 		if _, err := resources.SplitRendered(rendered, resourceDir); err != nil {
-			return err
+			message := fmt.Sprintf("cluster %q release %q chart %q produced invalid %s rendered YAML (rendered manifest: %s): %v", cluster, release.Name, chartRef, state, renderedPath, err)
+			if mode == cli.RenderErrorModeWarnSkipRelease {
+				if err := os.WriteFile(filepath.Join(chartDir, renderWarningFilename), []byte(message+"\n"), 0o644); err != nil {
+					return err
+				}
+				continue
+			}
+			return fmt.Errorf("%s", message)
 		}
 	}
 	return nil
@@ -225,6 +234,10 @@ func compareCluster(cluster, baselineOutput, currentOutput, diffOutput string, c
 		baselineChartDir := filepath.Join(baselineOutput, cluster, chartName)
 		currentChartDir := filepath.Join(currentOutput, cluster, chartName)
 		namespace := firstNonEmpty(readFirstLine(filepath.Join(currentChartDir, "namespace.txt")), readFirstLine(filepath.Join(baselineChartDir, "namespace.txt")))
+		renderWarning := joinNonEmpty(
+			strings.TrimSpace(readFirstLine(filepath.Join(currentChartDir, renderWarningFilename))),
+			strings.TrimSpace(readFirstLine(filepath.Join(baselineChartDir, renderWarningFilename))),
+		)
 
 		baselineResources, err := resources.LoadDir(filepath.Join(baselineChartDir, "resources"))
 		if err != nil {
@@ -237,11 +250,11 @@ func compareCluster(cluster, baselineOutput, currentOutput, diffOutput string, c
 		schemaResolver := validate.NewSchemaResolver(currentResources)
 		duplicateCounts := resourceIdentityCounts(currentResources)
 		resourceKeys := unionKeys(baselineResources, currentResources)
-		if len(resourceKeys) == 0 {
+		if len(resourceKeys) == 0 && renderWarning == "" {
 			continue
 		}
 
-		chartReport := output.ChartReport{Name: chartName, Namespace: namespace}
+		chartReport := output.ChartReport{Name: chartName, Namespace: namespace, RenderWarning: renderWarning}
 		chartDiffDir := filepath.Join(diffOutput, cluster, chartName)
 		if err := os.MkdirAll(chartDiffDir, 0o755); err != nil {
 			return report, err
@@ -328,7 +341,7 @@ func compareCluster(cluster, baselineOutput, currentOutput, diffOutput string, c
 			})
 		}
 
-		if len(chartReport.Resources) > 0 {
+		if len(chartReport.Resources) > 0 || chartReport.RenderWarning != "" {
 			report.Charts = append(report.Charts, chartReport)
 		}
 	}
@@ -353,6 +366,17 @@ func unionDirs(paths ...string) ([]string, error) {
 		}
 	}
 	return sortedSet(set), nil
+}
+
+func joinNonEmpty(parts ...string) string {
+	var out []string
+	for _, part := range parts {
+		if strings.TrimSpace(part) == "" {
+			continue
+		}
+		out = append(out, strings.TrimSpace(part))
+	}
+	return strings.Join(out, " | ")
 }
 
 func unionKeys(left, right map[string]resources.Resource) []string {

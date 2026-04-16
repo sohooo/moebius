@@ -27,9 +27,10 @@ type ResourceReport struct {
 }
 
 type ChartReport struct {
-	Name      string
-	Namespace string
-	Resources []ResourceReport
+	Name          string
+	Namespace     string
+	Resources     []ResourceReport
+	RenderWarning string
 }
 
 type ClusterReport struct {
@@ -160,6 +161,10 @@ func renderClusterPlain(report ClusterReport, mode diff.Mode) (string, error) {
 	fmt.Fprintf(&b, "== Cluster: %s ==\n", report.Name)
 	for _, chart := range report.Charts {
 		fmt.Fprintf(&b, "-- Chart: %s (namespace: %s) --\n", chart.Name, emptyToNone(chart.Namespace))
+		if chart.RenderWarning != "" {
+			fmt.Fprintf(&b, "! render warning: %s\n\n", chart.RenderWarning)
+			continue
+		}
 		for _, resource := range chart.Resources {
 			fmt.Fprintf(&b, "Resource: %s/%s (%s, severity: %s%s)\n", resource.Kind, resource.Name, resource.State, resource.Assessment.Level, validationSuffix(resource.Validation))
 			if detail := validationCoverageLine(resource.Validation); detail != "" {
@@ -207,6 +212,10 @@ func renderClusterMarkdown(report ClusterReport, mode diff.Mode) (string, error)
 	for _, chart := range report.Charts {
 		fmt.Fprintf(&b, "### Chart `%s`\n\n", chart.Name)
 		fmt.Fprintf(&b, "- Namespace: `%s`\n\n", emptyToNone(chart.Namespace))
+		if chart.RenderWarning != "" {
+			fmt.Fprintf(&b, "> Render warning: %s\n\n", chart.RenderWarning)
+			continue
+		}
 		for _, resource := range chart.Resources {
 			fmt.Fprintf(&b, "#### Resource `%s/%s` (%s, severity: %s%s)\n\n", resource.Kind, resource.Name, resource.State, resource.Assessment.Level, validationSuffix(resource.Validation))
 			if detail := validationCoverageLine(resource.Validation); detail != "" {
@@ -267,6 +276,12 @@ func renderClusterComment(report ClusterReport, mode diff.Mode, opts NoteRenderO
 	for _, chart := range report.Charts {
 		added, removed, changed := chartChangeCounts(chart)
 		fmt.Fprintf(&b, "<details>\n<summary>Chart `%s` · namespace `%s` · severity `%s` · added %d · removed %d · changed %d</summary>\n\n", chart.Name, emptyToNone(chart.Namespace), chartSeverity(chart), added, removed, changed)
+		if chart.RenderWarning != "" {
+			fmt.Fprintf(&b, "- Render warning: %s\n\n", chart.RenderWarning)
+			fmt.Fprintln(&b, "</details>")
+			fmt.Fprintln(&b)
+			continue
+		}
 		fmt.Fprintf(&b, "- Kinds affected: %s\n", strings.Join(chartKinds(chart), ", "))
 		if onlyValueTweaks(chart) {
 			fmt.Fprintln(&b, "- Scope: value-level tweaks only")
@@ -427,11 +442,15 @@ func renderTopSummary(b *strings.Builder, reports []ClusterReport) {
 	validationErrors := 0
 	validationWarnings := 0
 	unvalidatedResources := 0
+	renderWarnings := 0
 	highlights := collectReviewHighlights(reports, 5)
 
 	for _, report := range reports {
 		totalCharts += len(report.Charts)
 		for _, chart := range report.Charts {
+			if chart.RenderWarning != "" {
+				renderWarnings++
+			}
 			added, removed, changed := chartChangeCounts(chart)
 			c.added += added
 			c.removed += removed
@@ -461,6 +480,9 @@ func renderTopSummary(b *strings.Builder, reports []ClusterReport) {
 		fmt.Fprintf(b, "**Severity:** %s\n\n", summary)
 	}
 	fmt.Fprintf(b, "**Validation:** %d errors, %d warnings, %d unvalidated\n\n", validationErrors, validationWarnings, unvalidatedResources)
+	if renderWarnings > 0 {
+		fmt.Fprintf(b, "**Render warnings:** %d skipped release(s)\n\n", renderWarnings)
+	}
 	if len(highlights) > 0 {
 		fmt.Fprintln(b, "**Highlights**")
 		fmt.Fprintln(b)
@@ -471,6 +493,9 @@ func renderTopSummary(b *strings.Builder, reports []ClusterReport) {
 }
 
 func chartKinds(chart ChartReport) []string {
+	if chart.RenderWarning != "" {
+		return []string{"<unavailable>"}
+	}
 	set := map[string]struct{}{}
 	for _, resource := range chart.Resources {
 		set[resource.Kind] = struct{}{}
@@ -484,6 +509,9 @@ func chartKinds(chart ChartReport) []string {
 }
 
 func onlyValueTweaks(chart ChartReport) bool {
+	if chart.RenderWarning != "" {
+		return false
+	}
 	for _, resource := range chart.Resources {
 		if resource.State != "changed" {
 			return false
@@ -493,6 +521,9 @@ func onlyValueTweaks(chart ChartReport) bool {
 }
 
 func collectNotableChanges(chart ChartReport) []string {
+	if chart.RenderWarning != "" {
+		return []string{fmt.Sprintf("[render-warning] %s", chart.RenderWarning)}
+	}
 	var out []string
 	for _, resource := range chart.Resources {
 		for _, line := range topValidationFindings(resource, 2) {
@@ -560,6 +591,9 @@ func topValidationFindings(resource ResourceReport, limit int) []string {
 }
 
 func chartSeverity(chart ChartReport) severity.Level {
+	if chart.RenderWarning != "" {
+		return severity.LevelInfo
+	}
 	level := severity.LevelInfo
 	for _, resource := range chart.Resources {
 		if severity.Rank(resource.Assessment.Level) > severity.Rank(level) {
@@ -570,6 +604,9 @@ func chartSeverity(chart ChartReport) severity.Level {
 }
 
 func chartSeverityCounts(chart ChartReport) map[severity.Level]int {
+	if chart.RenderWarning != "" {
+		return map[severity.Level]int{}
+	}
 	counts := map[severity.Level]int{}
 	for _, resource := range chart.Resources {
 		counts[resource.Assessment.Level]++
@@ -586,6 +623,13 @@ func collectReviewHighlights(reports []ClusterReport, limit int) []string {
 	var items []highlight
 	for _, report := range reports {
 		for _, chart := range report.Charts {
+			if chart.RenderWarning != "" {
+				items = append(items, highlight{
+					validation: validate.StatusWarning,
+					level:      severity.LevelInfo,
+					text:       fmt.Sprintf("Cluster `%s` · chart `%s` [render-warning]: %s", report.Name, chart.Name, chart.RenderWarning),
+				})
+			}
 			for _, resource := range chart.Resources {
 				for _, finding := range topValidationFindings(resource, 2) {
 					items = append(items, highlight{
@@ -642,6 +686,9 @@ func formatSeveritySummary(counts map[severity.Level]int) string {
 }
 
 func chartValidationCounts(chart ChartReport) (errors int, warnings int, unvalidated int) {
+	if chart.RenderWarning != "" {
+		return 0, 0, 0
+	}
 	for _, resource := range chart.Resources {
 		switch resource.Validation.Status {
 		case validate.StatusError:
@@ -712,6 +759,13 @@ func emptyToNone(v string) string {
 }
 
 func defaultStatus(reports []ClusterReport) string {
+	for _, report := range reports {
+		for _, chart := range report.Charts {
+			if chart.RenderWarning != "" {
+				return "warnings detected"
+			}
+		}
+	}
 	if len(reports) == 0 {
 		return "no effective changes"
 	}

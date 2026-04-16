@@ -12,6 +12,7 @@ type Command string
 type DiffMode string
 type CommentMode string
 type OutputFormat string
+type RenderErrorMode string
 
 const (
 	CommandDiff    Command = "diff"
@@ -28,6 +29,9 @@ const (
 
 	OutputFormatPlain    OutputFormat = "plain"
 	OutputFormatMarkdown OutputFormat = "markdown"
+
+	RenderErrorModeFail            RenderErrorMode = "fail"
+	RenderErrorModeWarnSkipRelease RenderErrorMode = "warn-skip-release"
 )
 
 type Options struct {
@@ -43,6 +47,7 @@ type Options struct {
 	MaxCommentBytes int
 	OutputFormat    OutputFormat
 	Validate        bool
+	RenderErrorMode RenderErrorMode
 
 	ProjectID       string
 	MergeRequestIID string
@@ -58,6 +63,7 @@ func Parse(args []string, stdout io.Writer) (Options, error) {
 	opts.MaxCommentBytes = 50000
 	opts.OutputFormat = OutputFormatPlain
 	opts.Validate = true
+	opts.RenderErrorMode = RenderErrorModeFail
 
 	fs := flag.NewFlagSet("møbius", flag.ContinueOnError)
 	fs.SetOutput(stdout)
@@ -97,6 +103,15 @@ func Parse(args []string, stdout io.Writer) (Options, error) {
 			return nil
 		default:
 			return fmt.Errorf("invalid comment mode %q", v)
+		}
+	})
+	fs.Func("render-error-mode", "Rendered manifest error mode: fail or warn-skip-release", func(v string) error {
+		switch RenderErrorMode(v) {
+		case RenderErrorModeFail, RenderErrorModeWarnSkipRelease:
+			opts.RenderErrorMode = RenderErrorMode(v)
+			return nil
+		default:
+			return fmt.Errorf("invalid render error mode %q", v)
 		}
 	})
 

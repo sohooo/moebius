@@ -28,3 +28,13 @@ func TestParseHelpListsVersionCommand(t *testing.T) {
 		t.Fatalf("expected usage to mention version command, got %q", stdout.String())
 	}
 }
+
+func TestParseRenderErrorMode(t *testing.T) {
+	opts, err := Parse([]string{"comment", "--render-error-mode", "warn-skip-release"}, &bytes.Buffer{})
+	if err != nil {
+		t.Fatalf("Parse returned error: %v", err)
+	}
+	if opts.RenderErrorMode != RenderErrorModeWarnSkipRelease {
+		t.Fatalf("expected warn-skip-release, got %q", opts.RenderErrorMode)
+	}
+}

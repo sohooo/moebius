@@ -179,6 +179,16 @@ mobius-diff:
 
 The explicit `git fetch` is important in GitLab CI. Merge request jobs often run in a detached checkout that does not include a local ref for the target branch, so `møbius` cannot resolve the default base ref unless that branch is fetched first.
 
+If one rendered release contains invalid YAML and you want the pipeline to keep reporting the rest, use:
+
+```yaml
+script:
+  - git fetch origin "${CI_MERGE_REQUEST_TARGET_BRANCH_NAME}:${CI_MERGE_REQUEST_TARGET_BRANCH_NAME}"
+  - møbius comment --base-ref "${CI_MERGE_REQUEST_TARGET_BRANCH_NAME}" --render-error-mode warn-skip-release --output-dir .mobius-out
+```
+
+In that mode, `møbius` keeps the raw `rendered.yaml`, skips only the broken release, and marks the report as incomplete with a visible render warning.
+
 Configuration precedence is:
 
 1. built-in defaults
@@ -377,6 +387,7 @@ layout:
 | `--context-lines N` | Unified diff context lines | `3` |
 | `--diff-mode raw\|semantic\|both` | Select raw diff, semantic diff, or both | `semantic` |
 | `--output-format plain\|markdown` | Select terminal output format | `plain` |
+| `--render-error-mode fail\|warn-skip-release` | Fail on invalid rendered YAML, or warn and skip only the broken release | `fail` |
 | `--project-id` | Override GitLab project ID for `comment` mode | `CI_PROJECT_ID` |
 | `--mr-iid` | Override GitLab MR IID for `comment` mode | `CI_MERGE_REQUEST_IID` |
 | `--gitlab-base-url` | Override GitLab API base URL for `comment` mode | `CI_API_V4_URL` or `CI_SERVER_URL` |
