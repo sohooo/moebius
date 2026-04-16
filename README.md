@@ -192,6 +192,7 @@ In that mode, `møbius` keeps the raw `rendered.yaml`, skips only the broken rel
 When `--output-dir .mobius-out` is used, `møbius` also writes:
 
 - `.mobius-out/index.md` with a compact artifact overview
+- `.mobius-out/summary.json` with machine-readable artifact and report counts
 - `.mobius-out/errors/<state>--<cluster>--<release>.txt` for hard render failures
 - `.mobius-out/warnings/<state>--<cluster>--<release>.txt` for non-fatal render warnings
 

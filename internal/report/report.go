@@ -2,6 +2,7 @@
 package report
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -24,6 +25,7 @@ import (
 const renderWarningFilename = "render-warning.txt"
 const renderNoticeFilename = "render-notices.txt"
 const artifactIndexFilename = "index.md"
+const artifactSummaryFilename = "summary.json"
 
 func Build(opts cli.Options) ([]output.ClusterReport, string, error) {
 	repo, err := gitrepo.Open(".")
@@ -98,6 +100,7 @@ func Build(opts cli.Options) ([]output.ClusterReport, string, error) {
 	var reports []output.ClusterReport
 	defer func() {
 		_ = writeArtifactIndex(outputDir, reports)
+		_ = writeArtifactSummary(outputDir, reports)
 	}()
 	for _, cluster := range clusters {
 		currentExists := fileExists(config.AppsPath(repo.Root(), layout, cluster))
@@ -549,4 +552,53 @@ func listArtifactFiles(dir string) []string {
 	}
 	sort.Strings(names)
 	return names
+}
+
+type artifactSummary struct {
+	Clusters       int                    `json:"clusters"`
+	Charts         int                    `json:"charts"`
+	Added          int                    `json:"added"`
+	Removed        int                    `json:"removed"`
+	Changed        int                    `json:"changed"`
+	ErrorArtifacts []string               `json:"error_artifacts,omitempty"`
+	Warnings       []string               `json:"warning_artifacts,omitempty"`
+	Reports        []clusterArtifactEntry `json:"reports,omitempty"`
+}
+
+type clusterArtifactEntry struct {
+	Name    string `json:"name"`
+	Charts  int    `json:"charts"`
+	Added   int    `json:"added"`
+	Removed int    `json:"removed"`
+	Changed int    `json:"changed"`
+}
+
+func writeArtifactSummary(outputDir string, reports []output.ClusterReport) error {
+	if outputDir == "" {
+		return nil
+	}
+	summary := artifactSummary{
+		ErrorArtifacts: listArtifactFiles(filepath.Join(outputDir, "errors")),
+		Warnings:       listArtifactFiles(filepath.Join(outputDir, "warnings")),
+	}
+	for _, report := range reports {
+		summary.Clusters++
+		summary.Charts += len(report.Charts)
+		summary.Added += report.Added
+		summary.Removed += report.Removed
+		summary.Changed += report.Changed
+		summary.Reports = append(summary.Reports, clusterArtifactEntry{
+			Name:    report.Name,
+			Charts:  len(report.Charts),
+			Added:   report.Added,
+			Removed: report.Removed,
+			Changed: report.Changed,
+		})
+	}
+	data, err := json.MarshalIndent(summary, "", "  ")
+	if err != nil {
+		return err
+	}
+	data = append(data, '\n')
+	return os.WriteFile(filepath.Join(outputDir, artifactSummaryFilename), data, 0o644)
 }

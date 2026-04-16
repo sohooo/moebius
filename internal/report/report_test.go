@@ -1,6 +1,7 @@
 package report
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
@@ -81,5 +82,57 @@ func TestWriteArtifactIndex_IncludesErrorAndWarningArtifacts(t *testing.T) {
 			continue
 		}
 		t.Fatalf("expected artifact index to contain %q, got:\n%s", needle, text)
+	}
+}
+
+func TestWriteArtifactSummary_IncludesCountsAndArtifacts(t *testing.T) {
+	root := t.TempDir()
+	if err := writeArtifactMessage(filepath.Join(root, "errors"), "current", "kube-bravo", "otel-stack", []string{"render failed"}); err != nil {
+		t.Fatalf("write error artifact: %v", err)
+	}
+	if err := writeArtifactMessage(filepath.Join(root, "warnings"), "baseline", "kube-bravo", "otel-stack", []string{"duplicate key kept last value"}); err != nil {
+		t.Fatalf("write warning artifact: %v", err)
+	}
+
+	reports := []output.ClusterReport{{
+		Name:    "kube-bravo",
+		Added:   1,
+		Removed: 2,
+		Changed: 3,
+		Charts: []output.ChartReport{
+			{Name: "otel-stack"},
+			{Name: "argocd"},
+		},
+	}}
+
+	if err := writeArtifactSummary(root, reports); err != nil {
+		t.Fatalf("writeArtifactSummary returned error: %v", err)
+	}
+
+	data, err := os.ReadFile(filepath.Join(root, artifactSummaryFilename))
+	if err != nil {
+		t.Fatalf("read artifact summary: %v", err)
+	}
+	var got map[string]interface{}
+	if err := json.Unmarshal(data, &got); err != nil {
+		t.Fatalf("unmarshal artifact summary: %v", err)
+	}
+
+	if got["clusters"].(float64) != 1 {
+		t.Fatalf("expected clusters=1, got %v", got["clusters"])
+	}
+	if got["charts"].(float64) != 2 {
+		t.Fatalf("expected charts=2, got %v", got["charts"])
+	}
+	if got["added"].(float64) != 1 || got["removed"].(float64) != 2 || got["changed"].(float64) != 3 {
+		t.Fatalf("unexpected change counts: %v", got)
+	}
+	errorArtifacts := got["error_artifacts"].([]interface{})
+	if len(errorArtifacts) != 1 || errorArtifacts[0].(string) != "current--kube-bravo--otel-stack.txt" {
+		t.Fatalf("unexpected error artifacts: %v", errorArtifacts)
+	}
+	warningArtifacts := got["warning_artifacts"].([]interface{})
+	if len(warningArtifacts) != 1 || warningArtifacts[0].(string) != "baseline--kube-bravo--otel-stack.txt" {
+		t.Fatalf("unexpected warning artifacts: %v", warningArtifacts)
 	}
 }
