@@ -15,25 +15,37 @@ import (
 
 type Client struct {
 	baseURL    string
-	jobToken   string
+	token      string
+	tokenKind  TokenKind
 	httpClient *http.Client
 }
+
+type TokenKind string
+
+const (
+	TokenKindJob     TokenKind = "job"
+	TokenKindPrivate TokenKind = "private"
+)
 
 type Note struct {
 	ID   int    `json:"id"`
 	Body string `json:"body"`
 }
 
-func New(baseURL, jobToken string) (*Client, error) {
+func New(baseURL, token string, tokenKind TokenKind) (*Client, error) {
 	if baseURL == "" {
 		return nil, fmt.Errorf("gitlab base URL is required")
 	}
-	if jobToken == "" {
-		return nil, fmt.Errorf("CI_JOB_TOKEN is required")
+	if token == "" {
+		return nil, fmt.Errorf("GitLab token is required")
+	}
+	if tokenKind == "" {
+		tokenKind = TokenKindPrivate
 	}
 	return &Client{
-		baseURL:  strings.TrimRight(baseURL, "/"),
-		jobToken: jobToken,
+		baseURL:   strings.TrimRight(baseURL, "/"),
+		token:     token,
+		tokenKind: tokenKind,
 		httpClient: &http.Client{
 			Timeout: 30 * time.Second,
 		},
@@ -82,7 +94,12 @@ func (c *Client) doJSON(ctx context.Context, method, path string, body any, out 
 	if err != nil {
 		return err
 	}
-	req.Header.Set("JOB-TOKEN", c.jobToken)
+	switch c.tokenKind {
+	case TokenKindJob:
+		req.Header.Set("JOB-TOKEN", c.token)
+	default:
+		req.Header.Set("PRIVATE-TOKEN", c.token)
+	}
 	if body != nil {
 		req.Header.Set("Content-Type", "application/json")
 	}
@@ -93,7 +110,11 @@ func (c *Client) doJSON(ctx context.Context, method, path string, body any, out 
 	defer resp.Body.Close()
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		data, _ := io.ReadAll(io.LimitReader(resp.Body, 8192))
-		return fmt.Errorf("gitlab API %s %s failed with %s: %s", method, path, resp.Status, strings.TrimSpace(string(data)))
+		message := fmt.Sprintf("gitlab API %s %s failed with %s: %s", method, path, resp.Status, strings.TrimSpace(string(data)))
+		if c.tokenKind == TokenKindJob && (resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusForbidden) {
+			message += "; CI_JOB_TOKEN is often read-only for merge request notes, set GITLAB_TOKEN or use --gitlab-token"
+		}
+		return fmt.Errorf("%s", message)
 	}
 	if out == nil {
 		return nil

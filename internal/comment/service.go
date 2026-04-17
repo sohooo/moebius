@@ -20,7 +20,7 @@ type NoteClient interface {
 }
 
 type Service struct {
-	newClient func(baseURL, jobToken string) (NoteClient, error)
+	newClient func(baseURL, token string, tokenKind gitlab.TokenKind) (NoteClient, error)
 	resolve   func(opts cli.Options) (gitlab.Target, error)
 }
 
@@ -31,8 +31,8 @@ type Result struct {
 
 func New() *Service {
 	return &Service{
-		newClient: func(baseURL, jobToken string) (NoteClient, error) {
-			return gitlab.New(baseURL, jobToken)
+		newClient: func(baseURL, token string, tokenKind gitlab.TokenKind) (NoteClient, error) {
+			return gitlab.New(baseURL, token, tokenKind)
 		},
 		resolve: gitlab.ResolveTarget,
 	}
@@ -43,7 +43,7 @@ func (s *Service) Post(ctx context.Context, opts cli.Options, reports []output.C
 	if err != nil {
 		return Result{}, err
 	}
-	client, err := s.newClient(target.BaseURL, target.JobToken)
+	client, err := s.newClient(target.BaseURL, target.Token, target.TokenKind)
 	if err != nil {
 		return Result{}, err
 	}

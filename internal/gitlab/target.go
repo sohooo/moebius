@@ -12,7 +12,8 @@ type Target struct {
 	BaseURL         string
 	ProjectID       string
 	MergeRequestIID string
-	JobToken        string
+	Token           string
+	TokenKind       TokenKind
 }
 
 func ResolveTarget(opts cli.Options) (Target, error) {
@@ -25,6 +26,7 @@ func ResolveTarget(opts cli.Options) (Target, error) {
 
 	projectID := firstNonEmpty(opts.ProjectID, os.Getenv("CI_PROJECT_ID"))
 	mrIID := firstNonEmpty(opts.MergeRequestIID, os.Getenv("CI_MERGE_REQUEST_IID"))
+	apiToken := firstNonEmpty(opts.GitLabToken, os.Getenv("GITLAB_TOKEN"), os.Getenv("GITLAB_PRIVATE_TOKEN"), os.Getenv("GITLAB_API_TOKEN"))
 	jobToken := os.Getenv("CI_JOB_TOKEN")
 
 	if projectID == "" {
@@ -36,15 +38,23 @@ func ResolveTarget(opts cli.Options) (Target, error) {
 	if baseURL == "" {
 		return Target{}, fmt.Errorf("missing GitLab API base URL; set CI_API_V4_URL/CI_SERVER_URL or use --gitlab-base-url")
 	}
-	if jobToken == "" {
-		return Target{}, fmt.Errorf("missing CI_JOB_TOKEN")
+	if apiToken == "" && jobToken == "" {
+		return Target{}, fmt.Errorf("missing GitLab token; set GITLAB_TOKEN/GITLAB_PRIVATE_TOKEN or CI_JOB_TOKEN")
+	}
+
+	token := apiToken
+	tokenKind := TokenKindPrivate
+	if token == "" {
+		token = jobToken
+		tokenKind = TokenKindJob
 	}
 
 	return Target{
 		BaseURL:         baseURL,
 		ProjectID:       projectID,
 		MergeRequestIID: mrIID,
-		JobToken:        jobToken,
+		Token:           token,
+		TokenKind:       tokenKind,
 	}, nil
 }
 

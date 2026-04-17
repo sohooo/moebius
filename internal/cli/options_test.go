@@ -48,3 +48,13 @@ func TestParseDuplicateKeyMode(t *testing.T) {
 		t.Fatalf("expected warn-last-wins, got %q", opts.DuplicateKeyMode)
 	}
 }
+
+func TestParseGitLabToken(t *testing.T) {
+	opts, err := Parse([]string{"comment", "--gitlab-token", "secret"}, &bytes.Buffer{})
+	if err != nil {
+		t.Fatalf("Parse returned error: %v", err)
+	}
+	if opts.GitLabToken != "secret" {
+		t.Fatalf("expected gitlab token override, got %q", opts.GitLabToken)
+	}
+}

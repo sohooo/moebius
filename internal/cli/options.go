@@ -39,24 +39,25 @@ const (
 )
 
 type Options struct {
-	Command         Command
-	ClustersDir     string
-	BaseRef         string
-	Cluster         string
-	AllClusters     bool
-	OutputDir       string
-	ContextLines    int
-	DiffMode        DiffMode
-	CommentMode     CommentMode
-	MaxCommentBytes int
-	OutputFormat    OutputFormat
-	Validate        bool
-	RenderErrorMode RenderErrorMode
+	Command          Command
+	ClustersDir      string
+	BaseRef          string
+	Cluster          string
+	AllClusters      bool
+	OutputDir        string
+	ContextLines     int
+	DiffMode         DiffMode
+	CommentMode      CommentMode
+	MaxCommentBytes  int
+	OutputFormat     OutputFormat
+	Validate         bool
+	RenderErrorMode  RenderErrorMode
 	DuplicateKeyMode DuplicateKeyMode
 
 	ProjectID       string
 	MergeRequestIID string
 	GitLabBaseURL   string
+	GitLabToken     string
 }
 
 func Parse(args []string, stdout io.Writer) (Options, error) {
@@ -84,6 +85,7 @@ func Parse(args []string, stdout io.Writer) (Options, error) {
 	fs.StringVar(&opts.ProjectID, "project-id", "", "GitLab project ID override for comment mode")
 	fs.StringVar(&opts.MergeRequestIID, "mr-iid", "", "GitLab merge request IID override for comment mode")
 	fs.StringVar(&opts.GitLabBaseURL, "gitlab-base-url", "", "GitLab API base URL override for comment mode")
+	fs.StringVar(&opts.GitLabToken, "gitlab-token", "", "GitLab API token override for comment mode (preferred over CI_JOB_TOKEN)")
 	fs.Func("diff-mode", "Diff output mode: raw, semantic, or both", func(v string) error {
 		switch DiffMode(v) {
 		case DiffModeRaw, DiffModeSemantic, DiffModeBoth:

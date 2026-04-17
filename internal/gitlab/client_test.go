@@ -11,7 +11,7 @@ import (
 
 func TestClientMergeRequestNotesLifecycle(t *testing.T) {
 	var seenAuth string
-	client, err := New("https://gitlab.example/api/v4", "job-token")
+	client, err := New("https://gitlab.example/api/v4", "job-token", TokenKindJob)
 	if err != nil {
 		t.Fatalf("New returned error: %v", err)
 	}
@@ -59,8 +59,34 @@ func TestClientMergeRequestNotesLifecycle(t *testing.T) {
 	}
 }
 
+func TestClientUsesPrivateTokenHeader(t *testing.T) {
+	var jobToken string
+	var privateToken string
+	client, err := New("https://gitlab.example/api/v4", "private-token", TokenKindPrivate)
+	if err != nil {
+		t.Fatalf("New returned error: %v", err)
+	}
+	client.httpClient = &http.Client{
+		Transport: roundTripFunc(func(r *http.Request) (*http.Response, error) {
+			jobToken = r.Header.Get("JOB-TOKEN")
+			privateToken = r.Header.Get("PRIVATE-TOKEN")
+			return jsonResponse(http.StatusOK, `[]`), nil
+		}),
+	}
+
+	if _, err := client.ListMergeRequestNotes(context.Background(), "1", "7"); err != nil {
+		t.Fatalf("ListMergeRequestNotes returned error: %v", err)
+	}
+	if jobToken != "" {
+		t.Fatalf("expected no JOB-TOKEN header, got %q", jobToken)
+	}
+	if privateToken != "private-token" {
+		t.Fatalf("expected PRIVATE-TOKEN header, got %q", privateToken)
+	}
+}
+
 func TestClientReturnsHelpfulAPIError(t *testing.T) {
-	client, err := New("https://gitlab.example/api/v4", "job-token")
+	client, err := New("https://gitlab.example/api/v4", "job-token", TokenKindJob)
 	if err != nil {
 		t.Fatalf("New returned error: %v", err)
 	}
@@ -79,6 +105,9 @@ func TestClientReturnsHelpfulAPIError(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "forbidden") {
 		t.Fatalf("expected response body in error, got %v", err)
+	}
+	if !strings.Contains(err.Error(), "set GITLAB_TOKEN or use --gitlab-token") {
+		t.Fatalf("expected token hint in error, got %v", err)
 	}
 }
 

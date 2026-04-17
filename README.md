@@ -108,9 +108,12 @@ The job environment should:
 - fetch enough git history for merge-base calculation
 - make the merge request target branch ref available locally before running `møbius`
 - provide the repository checkout
-- provide `CI_PROJECT_ID`, `CI_MERGE_REQUEST_IID`, and `CI_JOB_TOKEN`
+- provide `CI_PROJECT_ID` and `CI_MERGE_REQUEST_IID`
+- provide a GitLab API token via `GITLAB_TOKEN` or `GITLAB_PRIVATE_TOKEN` for `møbius comment`
 - provide either `CI_API_V4_URL` or `CI_SERVER_URL`
 - provide network and credentials only if OCI chart access requires them
+
+`CI_JOB_TOKEN` remains a fallback, but on many GitLab instances it is not allowed to create or update merge request notes. For reliable `møbius comment` posting, use a dedicated project, group, or bot token with API scope.
 
 The repository in which the pipeline runs should include the cluster definitions and any referenced local charts. Layout configuration can come from built-in defaults, an optional repo-root [config.yaml](config.yaml), or the `MOBIUS_CONFIG_YAML` environment variable.
 
@@ -126,9 +129,13 @@ mobius-diff:
     - k8s
   variables:
     GIT_DEPTH: "0"
+    GITLAB_TOKEN: "${MOBIUS_GITLAB_TOKEN}"
   script:
     - git fetch origin "${CI_MERGE_REQUEST_TARGET_BRANCH_NAME}:${CI_MERGE_REQUEST_TARGET_BRANCH_NAME}"
-    - møbius comment --base-ref "${CI_MERGE_REQUEST_TARGET_BRANCH_NAME}" --output-dir .mobius-out
+    - |
+      møbius comment \
+        --base-ref "${CI_MERGE_REQUEST_TARGET_BRANCH_NAME}" \
+        --output-dir .mobius-out
   artifacts:
     when: always
     paths:
@@ -153,6 +160,7 @@ mobius-diff:
     - k8s
   variables:
     GIT_DEPTH: "0"
+    GITLAB_TOKEN: "${MOBIUS_GITLAB_TOKEN}"
     MOBIUS_CONFIG_YAML: |
       layout:
         clusters_dir: environments
@@ -170,7 +178,10 @@ mobius-diff:
           fallback_path: values/{name}.yaml
   script:
     - git fetch origin "${CI_MERGE_REQUEST_TARGET_BRANCH_NAME}:${CI_MERGE_REQUEST_TARGET_BRANCH_NAME}"
-    - møbius comment --base-ref "${CI_MERGE_REQUEST_TARGET_BRANCH_NAME}" --output-dir .mobius-out
+    - |
+      møbius comment \
+        --base-ref "${CI_MERGE_REQUEST_TARGET_BRANCH_NAME}" \
+        --output-dir .mobius-out
   artifacts:
     when: always
     paths:
@@ -184,7 +195,11 @@ If one rendered release contains invalid YAML and you want the pipeline to keep 
 ```yaml
 script:
   - git fetch origin "${CI_MERGE_REQUEST_TARGET_BRANCH_NAME}:${CI_MERGE_REQUEST_TARGET_BRANCH_NAME}"
-  - møbius comment --base-ref "${CI_MERGE_REQUEST_TARGET_BRANCH_NAME}" --render-error-mode warn-skip-release --output-dir .mobius-out
+  - |
+    møbius comment \
+      --base-ref "${CI_MERGE_REQUEST_TARGET_BRANCH_NAME}" \
+      --render-error-mode warn-skip-release \
+      --output-dir .mobius-out
 ```
 
 In that mode, `møbius` keeps the raw `rendered.yaml`, skips only the broken release, and marks the report as incomplete with a visible render warning.
@@ -414,8 +429,11 @@ layout:
 | `--project-id` | Override GitLab project ID for `comment` mode | `CI_PROJECT_ID` |
 | `--mr-iid` | Override GitLab MR IID for `comment` mode | `CI_MERGE_REQUEST_IID` |
 | `--gitlab-base-url` | Override GitLab API base URL for `comment` mode | `CI_API_V4_URL` or `CI_SERVER_URL` |
+| `--gitlab-token` | Override GitLab API token for `comment` mode | `GITLAB_TOKEN` or `GITLAB_PRIVATE_TOKEN`; preferred over `CI_JOB_TOKEN` |
 
 The `comment` subcommand always renders markdown internally and updates a single sticky MR note. If the note body is already current, it leaves the note unchanged.
+
+For note creation and updates, prefer a dedicated GitLab API token with API scope. `CI_JOB_TOKEN` is only used as a fallback and is often insufficient to create merge request notes.
 
 `comment` also supports:
 
