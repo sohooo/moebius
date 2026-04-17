@@ -14,6 +14,7 @@ type Target struct {
 	MergeRequestIID string
 	Token           string
 	TokenKind       TokenKind
+	TokenSource     string
 }
 
 func ResolveTarget(opts cli.Options) (Target, error) {
@@ -26,7 +27,12 @@ func ResolveTarget(opts cli.Options) (Target, error) {
 
 	projectID := firstNonEmpty(opts.ProjectID, os.Getenv("CI_PROJECT_ID"))
 	mrIID := firstNonEmpty(opts.MergeRequestIID, os.Getenv("CI_MERGE_REQUEST_IID"))
-	apiToken := firstNonEmpty(opts.GitLabToken, os.Getenv("GITLAB_TOKEN"), os.Getenv("GITLAB_PRIVATE_TOKEN"), os.Getenv("GITLAB_API_TOKEN"))
+	apiToken, apiTokenSource := firstNonEmptyWithSource(
+		namedValue{Source: "--gitlab-token", Value: opts.GitLabToken},
+		namedValue{Source: "GITLAB_TOKEN", Value: os.Getenv("GITLAB_TOKEN")},
+		namedValue{Source: "GITLAB_PRIVATE_TOKEN", Value: os.Getenv("GITLAB_PRIVATE_TOKEN")},
+		namedValue{Source: "GITLAB_API_TOKEN", Value: os.Getenv("GITLAB_API_TOKEN")},
+	)
 	jobToken := os.Getenv("CI_JOB_TOKEN")
 
 	if projectID == "" {
@@ -44,9 +50,11 @@ func ResolveTarget(opts cli.Options) (Target, error) {
 
 	token := apiToken
 	tokenKind := TokenKindPrivate
+	tokenSource := apiTokenSource
 	if token == "" {
 		token = jobToken
 		tokenKind = TokenKindJob
+		tokenSource = "CI_JOB_TOKEN"
 	}
 
 	return Target{
@@ -55,6 +63,7 @@ func ResolveTarget(opts cli.Options) (Target, error) {
 		MergeRequestIID: mrIID,
 		Token:           token,
 		TokenKind:       tokenKind,
+		TokenSource:     tokenSource,
 	}, nil
 }
 
@@ -65,4 +74,18 @@ func firstNonEmpty(values ...string) string {
 		}
 	}
 	return ""
+}
+
+type namedValue struct {
+	Source string
+	Value  string
+}
+
+func firstNonEmptyWithSource(values ...namedValue) (string, string) {
+	for _, value := range values {
+		if value.Value != "" {
+			return value.Value, value.Source
+		}
+	}
+	return "", ""
 }

@@ -111,6 +111,25 @@ func TestClientReturnsHelpfulAPIError(t *testing.T) {
 	}
 }
 
+func TestClientProbeCreateMergeRequestNoteAccessTreatsValidationErrorAsSuccess(t *testing.T) {
+	client, err := New("https://gitlab.example/api/v4", "private-token", TokenKindPrivate)
+	if err != nil {
+		t.Fatalf("New returned error: %v", err)
+	}
+	client.httpClient = &http.Client{
+		Transport: roundTripFunc(func(r *http.Request) (*http.Response, error) {
+			if r.Method != http.MethodPost {
+				t.Fatalf("expected POST, got %s", r.Method)
+			}
+			return textResponse(http.StatusBadRequest, `{"message":{"body":["is missing"]}}`), nil
+		}),
+	}
+
+	if err := client.ProbeCreateMergeRequestNoteAccess(context.Background(), "1", "7"); err != nil {
+		t.Fatalf("expected validation-style probe success, got %v", err)
+	}
+}
+
 type roundTripFunc func(*http.Request) (*http.Response, error)
 
 func (f roundTripFunc) RoundTrip(r *http.Request) (*http.Response, error) {

@@ -2,6 +2,8 @@ package comment
 
 import (
 	"context"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -124,14 +126,73 @@ func TestServicePost_FallsBackToSummaryArtifactsWhenCommentTooLarge(t *testing.T
 	}
 }
 
+func TestServicePreflight_ReportsPermissionFailure(t *testing.T) {
+	client := &fakeNoteClient{
+		probeErr: &gitlab.APIError{Method: "POST", Path: "/projects/1/merge_requests/7/notes", Status: "403 Forbidden", StatusCode: 403, Body: "forbidden"},
+	}
+	service := &Service{
+		newClient: func(baseURL, token string, tokenKind gitlab.TokenKind) (NoteClient, error) { return client, nil },
+		resolve: func(opts cli.Options) (gitlab.Target, error) {
+			return gitlab.Target{
+				ProjectID:       "1",
+				MergeRequestIID: "7",
+				BaseURL:         "https://gitlab.example/api/v4",
+				Token:           "token",
+				TokenKind:       gitlab.TokenKindJob,
+				TokenSource:     "CI_JOB_TOKEN",
+			}, nil
+		},
+	}
+
+	status, err := service.Preflight(context.Background(), cli.Options{})
+	if err == nil {
+		t.Fatal("expected preflight error")
+	}
+	if status.Status != StatusError {
+		t.Fatalf("expected error status, got %q", status.Status)
+	}
+	if len(status.Messages) == 0 || !strings.Contains(status.Messages[0], "CI_JOB_TOKEN is often read-only") {
+		t.Fatalf("expected descriptive permission message, got %#v", status.Messages)
+	}
+}
+
+func TestWriteStatusArtifact(t *testing.T) {
+	dir := t.TempDir()
+	status := StatusReport{
+		Status:          StatusError,
+		Stage:           "preflight",
+		ProjectID:       "1",
+		MergeRequestIID: "7",
+		BaseURL:         "https://gitlab.example/api/v4",
+		TokenKind:       gitlab.TokenKindPrivate,
+		TokenSource:     "GITLAB_TOKEN",
+		Messages:        []string{"missing permission"},
+	}
+	if err := WriteStatusArtifact(dir, status); err != nil {
+		t.Fatalf("WriteStatusArtifact returned error: %v", err)
+	}
+	data, err := os.ReadFile(filepath.Join(dir, "comment-preflight.json"))
+	if err != nil {
+		t.Fatalf("read status artifact: %v", err)
+	}
+	if !strings.Contains(string(data), `"status": "error"`) || !strings.Contains(string(data), `"token_source": "GITLAB_TOKEN"`) {
+		t.Fatalf("unexpected artifact contents: %s", string(data))
+	}
+}
+
 type fakeNoteClient struct {
 	notes       []gitlab.Note
 	createdBody string
 	updatedID   int
 	updatedBody string
+	listErr     error
+	probeErr    error
 }
 
 func (f *fakeNoteClient) ListMergeRequestNotes(ctx context.Context, projectID, mrIID string) ([]gitlab.Note, error) {
+	if f.listErr != nil {
+		return nil, f.listErr
+	}
 	return append([]gitlab.Note(nil), f.notes...), nil
 }
 
@@ -144,6 +205,10 @@ func (f *fakeNoteClient) UpdateMergeRequestNote(ctx context.Context, projectID, 
 	f.updatedID = noteID
 	f.updatedBody = body
 	return gitlab.Note{ID: noteID, Body: body}, nil
+}
+
+func (f *fakeNoteClient) ProbeCreateMergeRequestNoteAccess(ctx context.Context, projectID, mrIID string) error {
+	return f.probeErr
 }
 
 func sampleReports() []output.ClusterReport {

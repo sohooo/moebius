@@ -117,6 +117,8 @@ The job environment should:
 
 `CI_JOB_TOKEN` remains a fallback, but on many GitLab instances it is not allowed to create or update merge request notes. For reliable `møbius comment` posting, use a dedicated project, group, or bot token with API scope.
 
+Before rendering and posting, `møbius comment` now performs a GitLab preflight check. It validates the resolved project, merge request, API base URL, token source, and whether the token can reach the merge request notes API with note-creation permissions.
+
 The repository in which the pipeline runs should include the cluster definitions and any referenced local charts. Layout configuration can come from built-in defaults, an optional repo-root [config.yaml](config.yaml), or the `MOBIUS_CONFIG_YAML` environment variable.
 
 For repositories that already use the default layout, the pipeline only needs to reference the `møbius` image. No explicit layout config is required.
@@ -210,10 +212,25 @@ When `--output-dir .mobius-out` is used, `møbius` also writes:
 
 - `.mobius-out/index.md` with a compact artifact overview
 - `.mobius-out/summary.json` with machine-readable artifact and report counts
+- `.mobius-out/comment-preflight.json` with resolved GitLab target, token source, and comment preflight/posting status
 - `.mobius-out/errors/<state>--<cluster>--<release>.txt` for hard render failures
 - `.mobius-out/warnings/<state>--<cluster>--<release>.txt` for non-fatal render warnings
 
 This makes the failing release and preserved `rendered.yaml` path discoverable from CI artifacts even when the command exits non-zero.
+
+If comment preflight or MR note posting fails, `møbius comment`:
+
+- writes any available artifacts
+- prints a concise failure summary with the resolved GitLab context
+- falls back to printing the diff report to stdout
+- exits non-zero so the CI job still fails visibly
+
+Example error mapping:
+
+- `missing GitLab merge request IID`
+  Set `CI_MERGE_REQUEST_IID` or pass `--mr-iid`
+- `resolved token can read the merge request but cannot create MR notes`
+  Replace `CI_JOB_TOKEN` with `GITLAB_TOKEN` / `--gitlab-token` using a project, group, or bot token with API scope
 
 If a third-party chart emits duplicate YAML keys and you need `møbius` to accept that output with a documented "last key wins" fallback, use:
 

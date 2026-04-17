@@ -3,8 +3,11 @@ package comment
 
 import (
 	"context"
+	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/sohooo/moebius/internal/cli"
@@ -17,6 +20,7 @@ type NoteClient interface {
 	ListMergeRequestNotes(ctx context.Context, projectID, mrIID string) ([]gitlab.Note, error)
 	CreateMergeRequestNote(ctx context.Context, projectID, mrIID, body string) (gitlab.Note, error)
 	UpdateMergeRequestNote(ctx context.Context, projectID, mrIID string, noteID int, body string) (gitlab.Note, error)
+	ProbeCreateMergeRequestNoteAccess(ctx context.Context, projectID, mrIID string) error
 }
 
 type Service struct {
@@ -29,6 +33,26 @@ type Result struct {
 	Message string
 }
 
+type Status string
+
+const (
+	StatusOK      Status = "ok"
+	StatusWarning Status = "warning"
+	StatusError   Status = "error"
+)
+
+type StatusReport struct {
+	Status          Status           `json:"status"`
+	Stage           string           `json:"stage"`
+	ProjectID       string           `json:"project_id,omitempty"`
+	MergeRequestIID string           `json:"merge_request_iid,omitempty"`
+	BaseURL         string           `json:"gitlab_base_url,omitempty"`
+	TokenKind       gitlab.TokenKind `json:"token_kind,omitempty"`
+	TokenSource     string           `json:"token_source,omitempty"`
+	Action          string           `json:"action,omitempty"`
+	Messages        []string         `json:"messages,omitempty"`
+}
+
 func New() *Service {
 	return &Service{
 		newClient: func(baseURL, token string, tokenKind gitlab.TokenKind) (NoteClient, error) {
@@ -36,6 +60,40 @@ func New() *Service {
 		},
 		resolve: gitlab.ResolveTarget,
 	}
+}
+
+func (s *Service) Preflight(ctx context.Context, opts cli.Options) (StatusReport, error) {
+	status := StatusReport{Status: StatusError, Stage: "preflight"}
+	target, err := s.resolve(opts)
+	if err != nil {
+		status.Messages = []string{err.Error()}
+		return status, err
+	}
+	status.ProjectID = target.ProjectID
+	status.MergeRequestIID = target.MergeRequestIID
+	status.BaseURL = target.BaseURL
+	status.TokenKind = target.TokenKind
+	status.TokenSource = target.TokenSource
+
+	client, err := s.newClient(target.BaseURL, target.Token, target.TokenKind)
+	if err != nil {
+		status.Messages = []string{err.Error()}
+		return status, err
+	}
+	if _, err := client.ListMergeRequestNotes(ctx, target.ProjectID, target.MergeRequestIID); err != nil {
+		err = describeReadFailure(err)
+		status.Messages = []string{err.Error()}
+		return status, err
+	}
+	if err := client.ProbeCreateMergeRequestNoteAccess(ctx, target.ProjectID, target.MergeRequestIID); err != nil {
+		err = describeCreateFailure(err, target)
+		status.Messages = []string{err.Error()}
+		return status, err
+	}
+
+	status.Status = StatusOK
+	status.Messages = []string{"GitLab comment preflight passed."}
+	return status, nil
 }
 
 func (s *Service) Post(ctx context.Context, opts cli.Options, reports []output.ClusterReport) (Result, error) {
@@ -107,6 +165,58 @@ func (s *Service) Post(ctx context.Context, opts cli.Options, reports []output.C
 		Action:  "created",
 		Message: fmt.Sprintf("Created møbius MR note on !%s", target.MergeRequestIID),
 	}, nil
+}
+
+func WriteStatusArtifact(outputDir string, status StatusReport) error {
+	if outputDir == "" {
+		return nil
+	}
+	if err := os.MkdirAll(outputDir, 0o755); err != nil {
+		return err
+	}
+	data, err := json.MarshalIndent(status, "", "  ")
+	if err != nil {
+		return err
+	}
+	data = append(data, '\n')
+	return os.WriteFile(filepath.Join(outputDir, "comment-preflight.json"), data, 0o644)
+}
+
+func describeReadFailure(err error) error {
+	var apiErr *gitlab.APIError
+	if !errors.As(err, &apiErr) {
+		return fmt.Errorf("could not reach the GitLab merge request notes API; check CI_API_V4_URL/CI_SERVER_URL, network access, and TLS settings: %w", err)
+	}
+	switch apiErr.StatusCode {
+	case 401:
+		return fmt.Errorf("GitLab rejected the resolved token while reading merge request notes; check GITLAB_TOKEN/--gitlab-token and ensure it is valid for this GitLab instance")
+	case 403:
+		return fmt.Errorf("resolved GitLab token can reach the API but cannot read merge request notes; use a token with API scope and project access")
+	case 404:
+		return fmt.Errorf("GitLab merge request notes API returned 404 while resolving the comment target; check CI_PROJECT_ID, CI_MERGE_REQUEST_IID, and token visibility for the target project")
+	default:
+		return err
+	}
+}
+
+func describeCreateFailure(err error, target gitlab.Target) error {
+	var apiErr *gitlab.APIError
+	if !errors.As(err, &apiErr) {
+		return fmt.Errorf("could not probe GitLab comment creation; check network access and GitLab API availability: %w", err)
+	}
+	switch apiErr.StatusCode {
+	case 401:
+		return fmt.Errorf("resolved GitLab token from %s was rejected while testing merge request note creation; use GITLAB_TOKEN or --gitlab-token with a valid API token", target.TokenSource)
+	case 403:
+		if target.TokenKind == gitlab.TokenKindJob {
+			return fmt.Errorf("resolved token from %s can read the merge request but cannot create MR notes; CI_JOB_TOKEN is often read-only for notes, use GITLAB_TOKEN or --gitlab-token with API scope", target.TokenSource)
+		}
+		return fmt.Errorf("resolved GitLab token from %s can reach the merge request but lacks permission to create MR notes; use a project, group, or bot token with API scope", target.TokenSource)
+	case 404:
+		return fmt.Errorf("GitLab returned 404 while probing merge request note creation; check CI_PROJECT_ID, CI_MERGE_REQUEST_IID, GitLab visibility, and whether the token can see the target MR")
+	default:
+		return err
+	}
 }
 
 func normalizeNoteBody(body string) string {

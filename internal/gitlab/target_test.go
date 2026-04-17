@@ -23,6 +23,9 @@ func TestResolveTargetPrefersExplicitGitLabToken(t *testing.T) {
 	if target.TokenKind != TokenKindPrivate {
 		t.Fatalf("expected private token kind, got %q", target.TokenKind)
 	}
+	if target.TokenSource != "GITLAB_TOKEN" {
+		t.Fatalf("expected GITLAB_TOKEN source, got %q", target.TokenSource)
+	}
 }
 
 func TestResolveTargetFallsBackToJobToken(t *testing.T) {
@@ -43,5 +46,8 @@ func TestResolveTargetFallsBackToJobToken(t *testing.T) {
 	}
 	if target.TokenKind != TokenKindJob {
 		t.Fatalf("expected job token kind, got %q", target.TokenKind)
+	}
+	if target.TokenSource != "CI_JOB_TOKEN" {
+		t.Fatalf("expected CI_JOB_TOKEN source, got %q", target.TokenSource)
 	}
 }
