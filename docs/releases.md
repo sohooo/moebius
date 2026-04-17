@@ -20,13 +20,13 @@ go install github.com/sohooo/moebius/cmd/mobius@latest
 Pinned install:
 
 ```bash
-go install github.com/sohooo/moebius/cmd/mobius@v0.1.6
+go install github.com/sohooo/moebius/cmd/mobius@v0.1.7
 ```
 
 Container image:
 
 ```yaml
-image: ghcr.io/sohooo/moebius:v0.1.6
+image: ghcr.io/sohooo/moebius:v0.1.7
 ```
 
 Notes:
