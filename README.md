@@ -26,6 +26,8 @@ go install github.com/sohooo/moebius/cmd/mobius@v0.1.3
 
 This requires a local Go toolchain. For GitLab CI, the container image remains the recommended distribution path.
 
+`go install` produces a `mobius` binary. The published container image provides both `mobius` and the Unicode alias `møbius`, and the CI examples below use `møbius`.
+
 Print the installed build metadata:
 
 ```bash

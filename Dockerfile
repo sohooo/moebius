@@ -10,7 +10,8 @@ FROM alpine:3.22
 
 RUN apk add --no-cache ca-certificates
 
-COPY --from=build /go/bin/mobius /usr/local/bin/møbius
+COPY --from=build /go/bin/mobius /usr/local/bin/mobius
+RUN ln -s /usr/local/bin/mobius /usr/local/bin/møbius
 
 ENTRYPOINT ["/usr/local/bin/møbius"]
 CMD ["diff"]
