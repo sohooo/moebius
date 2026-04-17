@@ -15,9 +15,9 @@ import (
 func TestServicePost_CreatesNoteWhenMissing(t *testing.T) {
 	client := &fakeNoteClient{}
 	service := &Service{
-		newClient: func(baseURL, jobToken string) (NoteClient, error) { return client, nil },
+		newClient: func(baseURL, token string, tokenKind gitlab.TokenKind) (NoteClient, error) { return client, nil },
 		resolve: func(opts cli.Options) (gitlab.Target, error) {
-			return gitlab.Target{ProjectID: "1", MergeRequestIID: "7", BaseURL: "https://gitlab.example/api/v4", JobToken: "token"}, nil
+			return gitlab.Target{ProjectID: "1", MergeRequestIID: "7", BaseURL: "https://gitlab.example/api/v4", Token: "token", TokenKind: gitlab.TokenKindPrivate}, nil
 		},
 	}
 
@@ -40,9 +40,9 @@ func TestServicePost_UpdatesExistingStickyNote(t *testing.T) {
 		},
 	}
 	service := &Service{
-		newClient: func(baseURL, jobToken string) (NoteClient, error) { return client, nil },
+		newClient: func(baseURL, token string, tokenKind gitlab.TokenKind) (NoteClient, error) { return client, nil },
 		resolve: func(opts cli.Options) (gitlab.Target, error) {
-			return gitlab.Target{ProjectID: "1", MergeRequestIID: "7", BaseURL: "https://gitlab.example/api/v4", JobToken: "token"}, nil
+			return gitlab.Target{ProjectID: "1", MergeRequestIID: "7", BaseURL: "https://gitlab.example/api/v4", Token: "token", TokenKind: gitlab.TokenKindPrivate}, nil
 		},
 	}
 
@@ -78,9 +78,9 @@ func TestServicePost_SkipsUpdateWhenBodyMatches(t *testing.T) {
 			{ID: 41, Body: body},
 		},
 	}
-	service.newClient = func(baseURL, jobToken string) (NoteClient, error) { return client, nil }
+	service.newClient = func(baseURL, token string, tokenKind gitlab.TokenKind) (NoteClient, error) { return client, nil }
 	service.resolve = func(opts cli.Options) (gitlab.Target, error) {
-		return gitlab.Target{ProjectID: "1", MergeRequestIID: "7", BaseURL: "https://gitlab.example/api/v4", JobToken: "token"}, nil
+		return gitlab.Target{ProjectID: "1", MergeRequestIID: "7", BaseURL: "https://gitlab.example/api/v4", Token: "token", TokenKind: gitlab.TokenKindPrivate}, nil
 	}
 
 	result, err := service.Post(context.Background(), cli.Options{DiffMode: cli.DiffModeSemantic}, sampleReports())
@@ -98,9 +98,9 @@ func TestServicePost_SkipsUpdateWhenBodyMatches(t *testing.T) {
 func TestServicePost_FallsBackToSummaryArtifactsWhenCommentTooLarge(t *testing.T) {
 	client := &fakeNoteClient{}
 	service := &Service{
-		newClient: func(baseURL, jobToken string) (NoteClient, error) { return client, nil },
+		newClient: func(baseURL, token string, tokenKind gitlab.TokenKind) (NoteClient, error) { return client, nil },
 		resolve: func(opts cli.Options) (gitlab.Target, error) {
-			return gitlab.Target{ProjectID: "1", MergeRequestIID: "7", BaseURL: "https://gitlab.example/api/v4", JobToken: "token"}, nil
+			return gitlab.Target{ProjectID: "1", MergeRequestIID: "7", BaseURL: "https://gitlab.example/api/v4", Token: "token", TokenKind: gitlab.TokenKindPrivate}, nil
 		},
 	}
 
