@@ -16,9 +16,11 @@ type RenderErrorMode string
 type DuplicateKeyMode string
 
 const (
-	CommandDiff    Command = "diff"
-	CommandComment Command = "comment"
-	CommandVersion Command = "version"
+	CommandDiff     Command = "diff"
+	CommandComment  Command = "comment"
+	CommandVersion  Command = "version"
+	CommandClusters Command = "clusters"
+	CommandDoctor   Command = "doctor"
 
 	DiffModeRaw      DiffMode = "raw"
 	DiffModeSemantic DiffMode = "semantic"
@@ -62,7 +64,6 @@ type Options struct {
 
 func Parse(args []string, stdout io.Writer) (Options, error) {
 	var opts Options
-	opts.BaseRef = "master"
 	opts.ContextLines = 3
 	opts.DiffMode = DiffModeSemantic
 	opts.CommentMode = CommentModeFull
@@ -75,7 +76,7 @@ func Parse(args []string, stdout io.Writer) (Options, error) {
 	fs := flag.NewFlagSet("møbius", flag.ContinueOnError)
 	fs.SetOutput(stdout)
 	fs.StringVar(&opts.ClustersDir, "clusters-dir", opts.ClustersDir, "Override cluster definitions directory from config.yaml")
-	fs.StringVar(&opts.BaseRef, "base-ref", opts.BaseRef, "Base ref used for merge-base")
+	fs.StringVar(&opts.BaseRef, "base-ref", opts.BaseRef, "Base ref used for merge-base (default: origin/HEAD, then main, then master)")
 	fs.StringVar(&opts.Cluster, "cluster", "", "Render and compare a single cluster")
 	fs.BoolVar(&opts.AllClusters, "all-clusters", false, "Render and compare all clusters")
 	fs.StringVar(&opts.OutputDir, "output-dir", "", "Persist rendered artifacts and diffs under PATH")
@@ -133,7 +134,7 @@ func Parse(args []string, stdout io.Writer) (Options, error) {
 	})
 
 	fs.Usage = func() {
-		fmt.Fprintf(stdout, "Usage:\n  møbius <diff|comment|version> [options]\n\nOptions:\n")
+		fmt.Fprintf(stdout, "Usage:\n  møbius <diff|comment|version|clusters|doctor> [options]\n\nOptions:\n")
 		fs.PrintDefaults()
 	}
 
@@ -143,7 +144,7 @@ func Parse(args []string, stdout io.Writer) (Options, error) {
 	}
 
 	switch Command(args[0]) {
-	case CommandDiff, CommandComment, CommandVersion:
+	case CommandDiff, CommandComment, CommandVersion, CommandClusters, CommandDoctor:
 		opts.Command = Command(args[0])
 	default:
 		return opts, fmt.Errorf("unknown subcommand %q", args[0])

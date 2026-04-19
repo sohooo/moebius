@@ -72,6 +72,41 @@ func (r *Repo) ResolveCommit(rev string) (*object.Commit, error) {
 	return nil, fmt.Errorf("could not resolve git revision %q", rev)
 }
 
+func (r *Repo) ResolveBaseRef(rev string) (string, *object.Commit, error) {
+	if rev != "" {
+		commit, err := r.ResolveCommit(rev)
+		if err != nil {
+			return "", nil, err
+		}
+		return rev, commit, nil
+	}
+
+	candidates := make([]string, 0, 3)
+	if ref, err := r.repo.Reference(plumbing.ReferenceName("refs/remotes/origin/HEAD"), true); err == nil {
+		target := ref.Target().String()
+		if strings.HasPrefix(target, "refs/remotes/origin/") {
+			candidates = append(candidates, strings.TrimPrefix(target, "refs/remotes/origin/"))
+		}
+	}
+	candidates = append(candidates, "main", "master")
+
+	seen := map[string]struct{}{}
+	for _, candidate := range candidates {
+		if candidate == "" {
+			continue
+		}
+		if _, ok := seen[candidate]; ok {
+			continue
+		}
+		seen[candidate] = struct{}{}
+		commit, err := r.ResolveCommit(candidate)
+		if err == nil {
+			return candidate, commit, nil
+		}
+	}
+	return "", nil, fmt.Errorf("could not auto-detect a base ref; tried origin/HEAD, main, and master")
+}
+
 func (r *Repo) MergeBase(head, base *object.Commit) (*object.Commit, error) {
 	commits, err := head.MergeBase(base)
 	if err != nil {
@@ -119,7 +154,7 @@ func (r *Repo) ChangedClusters(clustersDir string, base, head *object.Commit) ([
 	return mapKeys(set), nil
 }
 
-func (r *Repo) AllClusters(clustersDir string) ([]string, error) {
+func (r *Repo) AllClusters(clustersDir, appsFile string) ([]string, error) {
 	root := filepath.Join(r.root, clustersDir)
 	entries, err := os.ReadDir(root)
 	if err != nil {
@@ -133,12 +168,41 @@ func (r *Repo) AllClusters(clustersDir string) ([]string, error) {
 		if !entry.IsDir() {
 			continue
 		}
-		if _, err := os.Stat(filepath.Join(root, entry.Name(), "apps.yaml")); err == nil {
+		if _, err := os.Stat(filepath.Join(root, entry.Name(), filepath.FromSlash(appsFile))); err == nil {
 			clusters = append(clusters, entry.Name())
 		}
 	}
 	sort.Strings(clusters)
 	return clusters, nil
+}
+
+func (r *Repo) AllClustersAtCommit(commit *object.Commit, clustersDir, appsFile string) ([]string, error) {
+	tree, err := commit.Tree()
+	if err != nil {
+		return nil, err
+	}
+	prefix := strings.TrimSuffix(filepath.ToSlash(clustersDir), "/") + "/"
+	appsFile = filepath.ToSlash(appsFile)
+	set := map[string]struct{}{}
+	iter := tree.Files()
+	defer iter.Close()
+	if err := iter.ForEach(func(file *object.File) error {
+		if !strings.HasPrefix(file.Name, prefix) {
+			return nil
+		}
+		rest := strings.TrimPrefix(file.Name, prefix)
+		parts := strings.SplitN(rest, "/", 2)
+		if len(parts) != 2 || parts[0] == "" {
+			return nil
+		}
+		if parts[1] == appsFile {
+			set[parts[0]] = struct{}{}
+		}
+		return nil
+	}); err != nil {
+		return nil, err
+	}
+	return mapKeys(set), nil
 }
 
 func (r *Repo) PathExistsAtCommit(commit *object.Commit, relPath string) (bool, error) {

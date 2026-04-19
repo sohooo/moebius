@@ -38,6 +38,11 @@ script:
       --output-dir .mobius-out
 ```
 
+If you do not set `--base-ref`, `møbius` now auto-detects the base ref in this order:
+- `origin/HEAD`
+- `main`
+- `master`
+
 ## `401 Unauthorized` on MR notes
 
 What it means:
@@ -150,6 +155,23 @@ script:
 ```
 
 Do not rely on a backslash unless it is the last character before the newline.
+
+## `No affected clusters.`
+
+What it means:
+- no clusters changed between `HEAD` and the resolved base ref
+
+What `møbius` now shows:
+- effective clusters directory
+- resolved base ref
+- a hint to use `--all-clusters` or `mobius clusters`
+
+How to verify:
+
+```bash
+mobius clusters
+mobius diff --all-clusters
+```
 
 ## Tag exists but GitHub Release or GHCR image is missing
 

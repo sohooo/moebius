@@ -84,6 +84,12 @@ When `--output-dir .mobius-out` is used, `møbius` writes:
 
 Use these artifacts first when debugging CI failures.
 
+For a fast local preflight before touching CI, run:
+
+```bash
+mobius doctor
+```
+
 ## Common Variants
 
 If you want CI to keep reporting the rest when one release renders invalid YAML:

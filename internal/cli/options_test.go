@@ -18,13 +18,25 @@ func TestParseVersionCommand(t *testing.T) {
 	}
 }
 
+func TestParseClustersAndDoctorCommands(t *testing.T) {
+	for _, command := range []Command{CommandClusters, CommandDoctor} {
+		opts, err := Parse([]string{string(command)}, &bytes.Buffer{})
+		if err != nil {
+			t.Fatalf("Parse(%q) returned error: %v", command, err)
+		}
+		if opts.Command != command {
+			t.Fatalf("expected command %q, got %q", command, opts.Command)
+		}
+	}
+}
+
 func TestParseHelpListsVersionCommand(t *testing.T) {
 	var stdout bytes.Buffer
 	_, err := Parse([]string{"--help"}, &stdout)
 	if !errors.Is(err, flag.ErrHelp) {
 		t.Fatalf("expected ErrHelp, got %v", err)
 	}
-	if !strings.Contains(stdout.String(), "<diff|comment|version>") {
+	if !strings.Contains(stdout.String(), "<diff|comment|version|clusters|doctor>") {
 		t.Fatalf("expected usage to mention version command, got %q", stdout.String())
 	}
 }

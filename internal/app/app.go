@@ -23,10 +23,11 @@ type commentService interface {
 }
 
 var (
-	parseOptions      = cli.Parse
-	buildReports      = report.Build
-	newCommentService = func() commentService { return comment.New() }
-	printReports      = output.PrintReports
+	parseOptions       = cli.Parse
+	buildReports       = report.Build
+	newCommentService  = func() commentService { return comment.New() }
+	printReports       = output.PrintReports
+	inspectCurrentRepo = inspectRepo
 )
 
 func Run(args []string) error {
@@ -44,6 +45,21 @@ func run(args []string, stdout io.Writer) error {
 	if opts.Command == cli.CommandVersion {
 		fmt.Fprint(stdout, buildinfo.String())
 		return nil
+	}
+	if opts.Command == cli.CommandClusters {
+		return runClusters(stdout, opts)
+	}
+	if opts.Command == cli.CommandDoctor {
+		return runDoctor(stdout, opts)
+	}
+	var inspected *repoContext
+	if opts.Command == cli.CommandDiff || opts.Command == cli.CommandComment {
+		if ctx, err := inspectCurrentRepo(opts); err == nil {
+			inspected = &ctx
+			if opts.BaseRef == "" {
+				opts.BaseRef = ctx.BaseRefName
+			}
+		}
 	}
 
 	var (
@@ -93,7 +109,13 @@ func run(args []string, stdout io.Writer) error {
 		fmt.Fprintln(stdout, result.Message)
 	default:
 		if len(reports) == 0 {
-			fmt.Fprintln(stdout, "No affected clusters.")
+			if inspected != nil {
+				fmt.Fprint(stdout, formatNoChangesMessage(*inspected))
+			} else if ctx, inspectErr := inspectCurrentRepo(opts); inspectErr == nil {
+				fmt.Fprint(stdout, formatNoChangesMessage(ctx))
+			} else {
+				fmt.Fprintln(stdout, "No affected clusters.")
+			}
 			return nil
 		}
 		if err := printReports(stdout, reports, diff.Mode(opts.DiffMode), opts.OutputFormat); err != nil {

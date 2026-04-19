@@ -50,6 +50,18 @@ Render markdown output for copy/paste into a merge request:
 mobius diff --cluster kube-bravo --output-format markdown
 ```
 
+Inspect discovered clusters before diffing:
+
+```bash
+mobius clusters
+```
+
+Run a fast local preflight:
+
+```bash
+mobius doctor
+```
+
 Add `møbius comment` to a GitLab MR pipeline:
 
 ```yaml
@@ -75,6 +87,10 @@ This is the recommended production path:
 - use a dedicated GitLab API token with note-writing permission
 - fetch the MR target branch explicitly
 - keep `.mobius-out/` as the canonical debug surface
+
+Base ref behavior:
+- `--base-ref` wins when set explicitly
+- otherwise `møbius` tries `origin/HEAD`, then `main`, then `master`
 
 ## Documentation
 

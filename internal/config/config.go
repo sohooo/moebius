@@ -21,6 +21,11 @@ type RepoConfig struct {
 	Layout LayoutConfig `yaml:"layout"`
 }
 
+type LoadMetadata struct {
+	UsedConfigFile bool
+	UsedEnvConfig  bool
+}
+
 type LayoutConfig struct {
 	ClustersDir string          `yaml:"clusters_dir"`
 	Apps        AppsConfig      `yaml:"apps"`
@@ -83,27 +88,46 @@ func Default() RepoConfig {
 }
 
 func LoadRepoConfig(root string) (RepoConfig, error) {
+	cfg, _, err := LoadRepoConfigWithMetadata(root)
+	return cfg, err
+}
+
+func LoadRepoConfigWithMetadata(root string) (RepoConfig, LoadMetadata, error) {
 	cfg := Default()
+	meta := LoadMetadata{}
 
 	filePath := filepath.Join(root, "config.yaml")
 	if data, err := os.ReadFile(filePath); err == nil {
+		meta.UsedConfigFile = true
 		if err := yaml.Unmarshal(data, &cfg); err != nil {
-			return RepoConfig{}, fmt.Errorf("parse %s: %w", filePath, err)
+			return RepoConfig{}, meta, fmt.Errorf("parse %s: %w", filePath, err)
 		}
 	} else if !os.IsNotExist(err) {
-		return RepoConfig{}, fmt.Errorf("read %s: %w", filePath, err)
+		return RepoConfig{}, meta, fmt.Errorf("read %s: %w", filePath, err)
 	}
 
 	if envConfig := os.Getenv(EnvConfigYAML); envConfig != "" {
+		meta.UsedEnvConfig = true
 		if err := yaml.Unmarshal([]byte(envConfig), &cfg); err != nil {
-			return RepoConfig{}, fmt.Errorf("parse %s: %w", EnvConfigYAML, err)
+			return RepoConfig{}, meta, fmt.Errorf("parse %s: %w", EnvConfigYAML, err)
 		}
 	}
 
 	if err := cfg.Validate(); err != nil {
-		return RepoConfig{}, err
+		return RepoConfig{}, meta, fmt.Errorf("invalid config after applying %s: %w", meta.SourceSummary(), err)
 	}
-	return cfg, nil
+	return cfg, meta, nil
+}
+
+func (m LoadMetadata) SourceSummary() string {
+	sources := []string{"built-in defaults"}
+	if m.UsedConfigFile {
+		sources = append(sources, "config.yaml")
+	}
+	if m.UsedEnvConfig {
+		sources = append(sources, EnvConfigYAML)
+	}
+	return strings.Join(sources, " + ")
 }
 
 func (c RepoConfig) Validate() error {

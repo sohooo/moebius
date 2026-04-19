@@ -12,6 +12,7 @@ import (
 
 	"github.com/sohooo/moebius/internal/cli"
 	"github.com/sohooo/moebius/internal/comment"
+	"github.com/sohooo/moebius/internal/config"
 	"github.com/sohooo/moebius/internal/diff"
 	"github.com/sohooo/moebius/internal/gitlab"
 	"github.com/sohooo/moebius/internal/output"
@@ -22,11 +23,13 @@ func TestRunCommentFallsBackToDiffOnPreflightFailure(t *testing.T) {
 	origBuild := buildReports
 	origNewService := newCommentService
 	origPrint := printReports
+	origInspect := inspectCurrentRepo
 	defer func() {
 		parseOptions = origParse
 		buildReports = origBuild
 		newCommentService = origNewService
 		printReports = origPrint
+		inspectCurrentRepo = origInspect
 	}()
 
 	outputDir := t.TempDir()
@@ -88,6 +91,50 @@ func TestRunCommentFallsBackToDiffOnPreflightFailure(t *testing.T) {
 	}
 	if !strings.Contains(string(data), `"status": "error"`) {
 		t.Fatalf("unexpected status artifact: %s", string(data))
+	}
+}
+
+func TestRunDiffNoChangesPrintsResolvedContext(t *testing.T) {
+	origParse := parseOptions
+	origBuild := buildReports
+	origInspect := inspectCurrentRepo
+	defer func() {
+		parseOptions = origParse
+		buildReports = origBuild
+		inspectCurrentRepo = origInspect
+	}()
+
+	parseOptions = func(args []string, stdout io.Writer) (cli.Options, error) {
+		return cli.Options{
+			Command: cli.CommandDiff,
+		}, nil
+	}
+	buildReports = func(opts cli.Options) ([]output.ClusterReport, string, error) {
+		return nil, "", nil
+	}
+	inspectCurrentRepo = func(opts cli.Options) (repoContext, error) {
+		return repoContext{
+			BaseRefName: "main",
+			EffectiveLayout: config.LayoutConfig{
+				ClustersDir: "clusters",
+			},
+		}, nil
+	}
+
+	var stdout bytes.Buffer
+	if err := run([]string{"diff"}, &stdout); err != nil {
+		t.Fatalf("run returned error: %v", err)
+	}
+	text := stdout.String()
+	for _, needle := range []string{
+		"No affected clusters.",
+		"Effective clusters dir: clusters",
+		"Base ref: main",
+		"mobius clusters",
+	} {
+		if !strings.Contains(text, needle) {
+			t.Fatalf("expected %q in output, got %s", needle, text)
+		}
 	}
 }
 

@@ -67,6 +67,23 @@ func TestLoadRepoConfigEnvOverridesFile(t *testing.T) {
 	}
 }
 
+func TestLoadRepoConfigWithMetadataReportsAppliedSources(t *testing.T) {
+	root := t.TempDir()
+	writeFile(t, filepath.Join(root, "config.yaml"), "layout:\n  clusters_dir: clusters-from-file\n")
+	t.Setenv(EnvConfigYAML, "layout:\n  clusters_dir: clusters-from-env\n")
+
+	_, meta, err := LoadRepoConfigWithMetadata(root)
+	if err != nil {
+		t.Fatalf("LoadRepoConfigWithMetadata returned error: %v", err)
+	}
+	if !meta.UsedConfigFile || !meta.UsedEnvConfig {
+		t.Fatalf("expected config file and env metadata, got %+v", meta)
+	}
+	if got := meta.SourceSummary(); got != "built-in defaults + config.yaml + MOBIUS_CONFIG_YAML" {
+		t.Fatalf("unexpected source summary: %q", got)
+	}
+}
+
 func TestLoadRepoConfigRejectsInvalidEnvYAML(t *testing.T) {
 	root := t.TempDir()
 	t.Setenv(EnvConfigYAML, "layout: [")
