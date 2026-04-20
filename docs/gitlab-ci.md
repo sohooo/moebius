@@ -55,7 +55,7 @@ Recommended token model:
 
 ## Comment Preflight
 
-Before rendering and posting, `møbius comment` validates:
+Before posting, `møbius comment` validates:
 - project ID
 - merge request IID
 - GitLab API base URL
@@ -64,6 +64,7 @@ Before rendering and posting, `møbius comment` validates:
 - ability to create or update MR notes
 
 If preflight fails, `møbius comment`:
+- still builds the diff report
 - writes any available artifacts
 - prints a concise failure summary
 - falls back to printing the diff report to stdout
@@ -89,6 +90,8 @@ For a fast local preflight before touching CI, run:
 ```bash
 mobius doctor
 ```
+
+If GitLab-related environment variables or tokens are already present, `mobius doctor` also performs a live GitLab MR note readiness check. Without GitLab context, it stays local and reports that the GitLab checks were skipped.
 
 ## Common Variants
 

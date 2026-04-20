@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strconv"
 	"strings"
 	"testing"
 )
@@ -127,6 +128,33 @@ func TestClientProbeCreateMergeRequestNoteAccessTreatsValidationErrorAsSuccess(t
 
 	if err := client.ProbeCreateMergeRequestNoteAccess(context.Background(), "1", "7"); err != nil {
 		t.Fatalf("expected validation-style probe success, got %v", err)
+	}
+}
+
+func TestClientCreateMergeRequestNoteHandlesLargeSuccessResponse(t *testing.T) {
+	client, err := New("https://gitlab.example/api/v4", "private-token", TokenKindPrivate)
+	if err != nil {
+		t.Fatalf("New returned error: %v", err)
+	}
+	largeBody := strings.Repeat("x", 12000)
+	client.httpClient = &http.Client{
+		Transport: roundTripFunc(func(r *http.Request) (*http.Response, error) {
+			if r.Method != http.MethodPost {
+				t.Fatalf("expected POST, got %s", r.Method)
+			}
+			return jsonResponse(http.StatusOK, `{"id":6,"body":"`+largeBody+`"}`), nil
+		}),
+	}
+
+	note, err := client.CreateMergeRequestNote(context.Background(), "1", "7", "body")
+	if err != nil {
+		t.Fatalf("CreateMergeRequestNote returned error: %v", err)
+	}
+	if note.ID != 6 {
+		t.Fatalf("expected created note id 6, got %#v", note)
+	}
+	if got := strconv.Itoa(len(note.Body)); got != "12000" {
+		t.Fatalf("expected body length 12000, got %s", got)
 	}
 }
 

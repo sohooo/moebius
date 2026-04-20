@@ -122,7 +122,15 @@ func Build(opts cli.Options) ([]output.ClusterReport, string, error) {
 			return nil, "", err
 		}
 
-		report, err := compareCluster(cluster, baselineOutput, currentOutput, diffOutput, opts.ContextLines, opts.Validate)
+		baselineReleases, err := loadReleasesIfPresent(baselineRoot, layout, cluster)
+		if err != nil {
+			return nil, "", err
+		}
+		currentReleases, err := loadReleasesIfPresent(repo.Root(), layout, cluster)
+		if err != nil {
+			return nil, "", err
+		}
+		report, err := compareCluster(cluster, baselineOutput, currentOutput, diffOutput, opts.ContextLines, opts.Validate, baselineReleases, currentReleases)
 		if err != nil {
 			return nil, "", err
 		}
@@ -293,7 +301,7 @@ func renderCluster(root string, layout config.LayoutConfig, cluster, state, outp
 	return nil
 }
 
-func compareCluster(cluster, baselineOutput, currentOutput, diffOutput string, contextLines int, doValidate bool) (output.ClusterReport, error) {
+func compareCluster(cluster, baselineOutput, currentOutput, diffOutput string, contextLines int, doValidate bool, baselineReleases map[string]config.Release, currentReleases map[string]config.Release) (output.ClusterReport, error) {
 	report := output.ClusterReport{Name: cluster}
 
 	chartNames, err := unionDirs(filepath.Join(baselineOutput, cluster), filepath.Join(currentOutput, cluster))
@@ -326,7 +334,17 @@ func compareCluster(cluster, baselineOutput, currentOutput, diffOutput string, c
 			continue
 		}
 
-		chartReport := output.ChartReport{Name: chartName, Namespace: namespace, RenderWarning: renderWarning, Warnings: renderNotices}
+		baselineRelease := baselineReleases[chartName]
+		currentRelease := currentReleases[chartName]
+		chartReport := output.ChartReport{
+			Name:                   chartName,
+			Namespace:              namespace,
+			RenderWarning:          renderWarning,
+			Warnings:               renderNotices,
+			BaselineTargetRevision: baselineRelease.TargetRevision,
+			CurrentTargetRevision:  currentRelease.TargetRevision,
+			HasRemoteSource:        baselineRelease.IsRemoteChart() || currentRelease.IsRemoteChart(),
+		}
 		chartDiffDir := filepath.Join(diffOutput, cluster, chartName)
 		if err := os.MkdirAll(chartDiffDir, 0o755); err != nil {
 			return report, err
@@ -419,6 +437,21 @@ func compareCluster(cluster, baselineOutput, currentOutput, diffOutput string, c
 	}
 
 	return report, nil
+}
+
+func loadReleasesIfPresent(root string, layout config.LayoutConfig, cluster string) (map[string]config.Release, error) {
+	if !fileExists(config.AppsPath(root, layout, cluster)) {
+		return map[string]config.Release{}, nil
+	}
+	releases, err := config.LoadReleases(root, layout, cluster)
+	if err != nil {
+		return nil, err
+	}
+	out := make(map[string]config.Release, len(releases))
+	for _, release := range releases {
+		out[release.Name] = release
+	}
+	return out, nil
 }
 
 func unionDirs(paths ...string) ([]string, error) {

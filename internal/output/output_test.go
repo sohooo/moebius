@@ -89,11 +89,55 @@ func TestRenderCommentBody_IncludesRenderWarnings(t *testing.T) {
 	if !strings.Contains(body, "warnings detected") {
 		t.Fatalf("expected warnings status in body, got %s", body)
 	}
-	if !strings.Contains(body, "render-warning") {
+	if !strings.Contains(body, "| Severity | Cluster | Resource | Finding |") {
+		t.Fatalf("expected highlights table in body, got %s", body)
+	}
+	if !strings.Contains(body, "render warning: cluster \"kube-bravo\" release \"argocd\"") {
 		t.Fatalf("expected render warning highlight in body, got %s", body)
+	}
+	if !strings.Contains(body, "[`Chart/argocd`](#chart-kube-bravo-argocd)") {
+		t.Fatalf("expected render warning chart link in body, got %s", body)
 	}
 	if !strings.Contains(body, "Render warnings:** 1 skipped release(s)") {
 		t.Fatalf("expected render warning summary in body, got %s", body)
+	}
+	if !strings.Contains(body, "> [!important]") {
+		t.Fatalf("expected important alert in body, got %s", body)
+	}
+}
+
+func TestRenderCommentBody_LinksHighlightsAndShowsVersionChanges(t *testing.T) {
+	report := sampleClusterReport()
+	report.Charts[0].HasRemoteSource = true
+	report.Charts[0].BaselineTargetRevision = "10.3.0"
+	report.Charts[0].CurrentTargetRevision = "12.0.2"
+
+	body, err := RenderCommentBody([]ClusterReport{report}, diff.ModeSemantic, NoteMetadata{CommitSHA: "deadbeef"})
+	if err != nil {
+		t.Fatalf("RenderCommentBody returned error: %v", err)
+	}
+	if !strings.Contains(body, "[`ClusterRole/hello-world`](#resource-kube-bravo-clusterrole-hello-world)") {
+		t.Fatalf("expected linked highlight resource in body, got %s", body)
+	}
+	if !strings.Contains(body, "version 10.3.0 → 12.0.2") {
+		t.Fatalf("expected chart version change in body, got %s", body)
+	}
+}
+
+func TestRenderCommentBody_UsesUniqueResourceAnchorsAcrossClusters(t *testing.T) {
+	first := sampleClusterReport()
+	second := sampleClusterReport()
+	second.Name = "kube-charlie"
+
+	body, err := RenderCommentBody([]ClusterReport{first, second}, diff.ModeSemantic, NoteMetadata{CommitSHA: "deadbeef"})
+	if err != nil {
+		t.Fatalf("RenderCommentBody returned error: %v", err)
+	}
+	if !strings.Contains(body, `id="resource-kube-bravo-deployment-hello-world"`) {
+		t.Fatalf("expected kube-bravo resource anchor in body, got %s", body)
+	}
+	if !strings.Contains(body, `id="resource-kube-charlie-deployment-hello-world"`) {
+		t.Fatalf("expected kube-charlie resource anchor in body, got %s", body)
 	}
 }
 

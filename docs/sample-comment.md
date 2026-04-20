@@ -16,8 +16,15 @@ Commit: `deadbeef`
 
 **Highlights**
 
-- Cluster `kube-bravo` · `Deployment/hello-world` [high]: replicas changed 2 -> 3
+| Severity | Cluster | Resource | Finding |
+| --- | --- | --- | --- |
+| 🟠 high | `kube-bravo` | [`Deployment/hello-world`](#resource-kube-bravo-deployment-hello-world) | replicas changed 2 -> 3 |
 
+**Navigation**
+
+- [kube-bravo](#cluster-kube-bravo) · added 0 · removed 0 · changed 1
+
+<a id="cluster-kube-bravo"></a>
 ## Cluster `kube-bravo`
 
 | Added | Removed | Changed |
@@ -26,6 +33,7 @@ Commit: `deadbeef`
 
 Charts with changes: 1
 
+<a id="chart-kube-bravo-hello-world"></a>
 <details>
 <summary>Chart `hello-world` · namespace `hello-world` · severity `high` · added 0 · removed 0 · changed 1</summary>
 
@@ -35,10 +43,10 @@ Charts with changes: 1
 - Notable changes:
   - `Deployment/hello-world` [high]: replicas changed 2 -> 3
 
-#### Resource `Deployment/hello-world` (changed, severity: high)
+<a id="resource-kube-bravo-deployment-hello-world"></a>
+#### Resource `kube-bravo · Deployment/hello-world` (changed, severity: high)
 
 - validation coverage: validated via embedded
-
 - replicas changed 2 -> 3
 
 ```diff

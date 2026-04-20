@@ -9,12 +9,14 @@ Start with artifacts when available:
 - `.mobius-out/errors/`
 - `.mobius-out/warnings/`
 
-## `could not resolve git revision "master"`
+## `could not auto-detect a base ref`
 
 What it means:
-- the target branch exists remotely, but the GitLab MR job does not have a local ref for it
+- `møbius` could not resolve any default base ref automatically
 
 Why it happens:
+- `refs/remotes/origin/HEAD` is not present locally
+- neither `main` nor `master` exists locally
 - GitLab MR pipelines often run in detached checkout mode
 - the target branch is not fetched automatically as a local ref
 
@@ -42,6 +44,12 @@ If you do not set `--base-ref`, `møbius` now auto-detects the base ref in this 
 - `origin/HEAD`
 - `main`
 - `master`
+
+If you set `--base-ref master` explicitly, you may still see the older error:
+
+```text
+could not resolve git revision "master"
+```
 
 ## `401 Unauthorized` on MR notes
 

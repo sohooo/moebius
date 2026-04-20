@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/sohooo/moebius/internal/config"
 	"github.com/sohooo/moebius/internal/output"
 )
 
@@ -27,7 +28,7 @@ func TestCompareCluster_IncludesChartWithWarningsOnly(t *testing.T) {
 		t.Fatalf("write notices: %v", err)
 	}
 
-	report, err := compareCluster("kube-bravo", baselineOutput, currentOutput, diffOutput, 3, false)
+	report, err := compareCluster("kube-bravo", baselineOutput, currentOutput, diffOutput, 3, false, map[string]config.Release{}, map[string]config.Release{})
 	if err != nil {
 		t.Fatalf("compareCluster returned error: %v", err)
 	}

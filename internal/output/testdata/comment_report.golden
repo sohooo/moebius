@@ -15,13 +15,24 @@ Generated: `2026-04-05T12:00:00Z`
 
 **Severity:** critical 1, high 1
 
+> [!caution]
+> Critical findings detected: 1
+
 **Validation:** 0 errors, 0 warnings, 1 unvalidated
 
 **Highlights**
 
-- Cluster `kube-bravo` · `ClusterRole/hello-world` [critical]: RBAC rules changed at `rules`
-- Cluster `kube-bravo` · `Deployment/hello-world` [high]: replicas changed 2 -> 3
+| Severity | Cluster | Resource | Finding |
+| --- | --- | --- | --- |
+| 🔴 critical | `kube-bravo` | [`ClusterRole/hello-world`](#resource-kube-bravo-clusterrole-hello-world) | RBAC rules changed at `rules` |
+| 🟠 high | `kube-bravo` | [`Deployment/hello-world`](#resource-kube-bravo-deployment-hello-world) | replicas changed 2 -> 3 |
 
+
+**Navigation**
+
+- [kube-bravo](#cluster-kube-bravo) · added 0 · removed 0 · changed 2
+
+<a id="cluster-kube-bravo"></a>
 ## Cluster `kube-bravo`
 
 | Added | Removed | Changed |
@@ -30,6 +41,7 @@ Generated: `2026-04-05T12:00:00Z`
 
 Charts with changes: 1
 
+<a id="chart-kube-bravo-hello-world"></a>
 <details>
 <summary>Chart `hello-world` · namespace `demo` · severity `critical` · added 0 · removed 0 · changed 2</summary>
 
@@ -41,10 +53,10 @@ Charts with changes: 1
   - `ClusterRole/hello-world` [critical]: RBAC rules changed at `rules`
   - `Deployment/hello-world` [high]: replicas changed 2 -> 3
 
-#### Resource `ClusterRole/hello-world` (changed, severity: critical)
+<a id="resource-kube-bravo-clusterrole-hello-world"></a>
+#### Resource `kube-bravo · ClusterRole/hello-world` (changed, severity: critical)
 
 - validation coverage: unvalidated (no schema available)
-
 - RBAC rules changed at `rules`
 
 ```diff
@@ -56,10 +68,10 @@ Charts with changes: 1
 +     - list
 ```
 
-#### Resource `Deployment/hello-world` (changed, severity: high)
+<a id="resource-kube-bravo-deployment-hello-world"></a>
+#### Resource `kube-bravo · Deployment/hello-world` (changed, severity: high)
 
 - validation coverage: validated via embedded
-
 - replicas changed 2 -> 3
 
 ```diff

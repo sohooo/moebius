@@ -62,6 +62,8 @@ Run a fast local preflight:
 mobius doctor
 ```
 
+If GitLab CI variables or GitLab tokens are present in your environment, `mobius doctor` also runs live GitLab comment-readiness checks.
+
 Add `møbius comment` to a GitLab MR pipeline:
 
 ```yaml

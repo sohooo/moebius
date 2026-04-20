@@ -76,7 +76,7 @@ func New(baseURL, token string, tokenKind TokenKind) (*Client, error) {
 func (c *Client) ListMergeRequestNotes(ctx context.Context, projectID, mrIID string) ([]Note, error) {
 	var notes []Note
 	path := fmt.Sprintf("/projects/%s/merge_requests/%s/notes", url.PathEscape(projectID), url.PathEscape(mrIID))
-	if err := c.doJSON(ctx, http.MethodGet, path, nil, &notes); err != nil {
+	if err := c.doJSON(ctx, http.MethodGet, path, nil, &notes, 8192); err != nil {
 		return nil, err
 	}
 	return notes, nil
@@ -86,7 +86,7 @@ func (c *Client) CreateMergeRequestNote(ctx context.Context, projectID, mrIID, b
 	var note Note
 	payload := map[string]string{"body": body}
 	path := fmt.Sprintf("/projects/%s/merge_requests/%s/notes", url.PathEscape(projectID), url.PathEscape(mrIID))
-	if err := c.doJSON(ctx, http.MethodPost, path, payload, &note); err != nil {
+	if err := c.doJSON(ctx, http.MethodPost, path, payload, &note, 0); err != nil {
 		return Note{}, err
 	}
 	return note, nil
@@ -96,7 +96,7 @@ func (c *Client) UpdateMergeRequestNote(ctx context.Context, projectID, mrIID st
 	var note Note
 	payload := map[string]string{"body": body}
 	path := fmt.Sprintf("/projects/%s/merge_requests/%s/notes/%d", url.PathEscape(projectID), url.PathEscape(mrIID), noteID)
-	if err := c.doJSON(ctx, http.MethodPut, path, payload, &note); err != nil {
+	if err := c.doJSON(ctx, http.MethodPut, path, payload, &note, 0); err != nil {
 		return Note{}, err
 	}
 	return note, nil
@@ -104,7 +104,7 @@ func (c *Client) UpdateMergeRequestNote(ctx context.Context, projectID, mrIID st
 
 func (c *Client) ProbeCreateMergeRequestNoteAccess(ctx context.Context, projectID, mrIID string) error {
 	path := fmt.Sprintf("/projects/%s/merge_requests/%s/notes", url.PathEscape(projectID), url.PathEscape(mrIID))
-	statusCode, _, err := c.do(ctx, http.MethodPost, path, map[string]string{})
+	statusCode, _, err := c.do(ctx, http.MethodPost, path, map[string]string{}, 8192)
 	if err == nil {
 		return nil
 	}
@@ -120,8 +120,8 @@ func (c *Client) ProbeCreateMergeRequestNoteAccess(ctx context.Context, projectI
 	}
 }
 
-func (c *Client) doJSON(ctx context.Context, method, path string, body any, out any) error {
-	_, data, err := c.do(ctx, method, path, body)
+func (c *Client) doJSON(ctx context.Context, method, path string, body any, out any, maxResponseBytes int64) error {
+	_, data, err := c.do(ctx, method, path, body, maxResponseBytes)
 	if err != nil {
 		return err
 	}
@@ -131,7 +131,7 @@ func (c *Client) doJSON(ctx context.Context, method, path string, body any, out 
 	return json.Unmarshal(data, out)
 }
 
-func (c *Client) do(ctx context.Context, method, path string, body any) (int, []byte, error) {
+func (c *Client) do(ctx context.Context, method, path string, body any, maxResponseBytes int64) (int, []byte, error) {
 	var reader io.Reader
 	if body != nil {
 		data, err := json.Marshal(body)
@@ -158,7 +158,11 @@ func (c *Client) do(ctx context.Context, method, path string, body any) (int, []
 		return 0, nil, fmt.Errorf("gitlab API %s %s request failed: %w", method, path, err)
 	}
 	defer resp.Body.Close()
-	data, _ := io.ReadAll(io.LimitReader(resp.Body, 8192))
+	bodyReader := io.Reader(resp.Body)
+	if maxResponseBytes > 0 {
+		bodyReader = io.LimitReader(resp.Body, maxResponseBytes)
+	}
+	data, _ := io.ReadAll(bodyReader)
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		apiErr := &APIError{
 			Method:     method,

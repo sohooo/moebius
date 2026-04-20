@@ -27,11 +27,14 @@ type ResourceReport struct {
 }
 
 type ChartReport struct {
-	Name          string
-	Namespace     string
-	Resources     []ResourceReport
-	RenderWarning string
-	Warnings      []string
+	Name                   string
+	Namespace              string
+	Resources              []ResourceReport
+	RenderWarning          string
+	Warnings               []string
+	BaselineTargetRevision string
+	CurrentTargetRevision  string
+	HasRemoteSource        bool
 }
 
 type ClusterReport struct {
@@ -134,6 +137,8 @@ func RenderCommentBodyWithOptions(reports []ClusterReport, mode diff.Mode, meta 
 	renderedReports := cloneReports(reports)
 	sortReportsForComment(renderedReports)
 	renderTopSummary(&b, renderedReports)
+	b.WriteByte('\n')
+	renderCommentTOC(&b, renderedReports)
 	b.WriteByte('\n')
 
 	for i := range reports {
@@ -274,6 +279,7 @@ func renderClusterMarkdown(report ClusterReport, mode diff.Mode) (string, error)
 
 func renderClusterComment(report ClusterReport, mode diff.Mode, opts NoteRenderOptions) (string, error) {
 	var b strings.Builder
+	fmt.Fprintf(&b, "<a id=\"%s\"></a>\n", clusterAnchor(report.Name))
 	fmt.Fprintf(&b, "## Cluster `%s`\n\n", report.Name)
 	fmt.Fprintln(&b, "| Added | Removed | Changed |")
 	fmt.Fprintln(&b, "| ---: | ---: | ---: |")
@@ -288,15 +294,19 @@ func renderClusterComment(report ClusterReport, mode diff.Mode, opts NoteRenderO
 
 	for _, chart := range report.Charts {
 		added, removed, changed := chartChangeCounts(chart)
-		fmt.Fprintf(&b, "<details>\n<summary>Chart `%s` · namespace `%s` · severity `%s` · added %d · removed %d · changed %d</summary>\n\n", chart.Name, emptyToNone(chart.Namespace), chartSeverity(chart), added, removed, changed)
+		fmt.Fprintf(&b, "<a id=\"%s\"></a>\n", chartAnchor(report.Name, chart.Name))
+		fmt.Fprintf(&b, "<details>\n<summary>Chart `%s` · namespace `%s` · severity `%s` · added %d · removed %d · changed %d%s</summary>\n\n", chart.Name, emptyToNone(chart.Namespace), chartSeverity(chart), added, removed, changed, chartVersionSuffix(chart))
 		if chart.RenderWarning != "" {
-			fmt.Fprintf(&b, "- Render warning: %s\n\n", chart.RenderWarning)
+			fmt.Fprintf(&b, "> [!important]\n> Render warning: %s\n\n", chart.RenderWarning)
 			fmt.Fprintln(&b, "</details>")
 			fmt.Fprintln(&b)
 			continue
 		}
-		for _, warning := range chart.Warnings {
-			fmt.Fprintf(&b, "- Warning: %s\n", warning)
+		for i, warning := range chart.Warnings {
+			if i == 0 {
+				fmt.Fprintln(&b, "> [!warning]")
+			}
+			fmt.Fprintf(&b, "> %s\n", warning)
 		}
 		if len(chart.Warnings) > 0 {
 			fmt.Fprintln(&b)
@@ -318,7 +328,8 @@ func renderClusterComment(report ClusterReport, mode diff.Mode, opts NoteRenderO
 			}
 		}
 		if opts.Mode == cli.CommentModeSummaryArtifacts || opts.IncludeArtifactsHint {
-			fmt.Fprintln(&b, "- Full detailed report is available in pipeline artifacts.")
+			fmt.Fprintln(&b, "> [!note]")
+			fmt.Fprintln(&b, "> Full detailed report is available in pipeline artifacts.")
 		}
 		fmt.Fprintln(&b)
 		if opts.Mode == cli.CommentModeSummary || opts.Mode == cli.CommentModeSummaryArtifacts {
@@ -327,20 +338,22 @@ func renderClusterComment(report ClusterReport, mode diff.Mode, opts NoteRenderO
 			continue
 		}
 		for _, resource := range chart.Resources {
-			fmt.Fprintf(&b, "#### Resource `%s/%s` (%s, severity: %s%s)\n\n", resource.Kind, resource.Name, resource.State, resource.Assessment.Level, validationSuffix(resource.Validation))
+			fmt.Fprintf(&b, "<a id=\"%s\"></a>\n", resourceAnchor(report.Name, resource.Kind, resource.Name))
+			fmt.Fprintf(&b, "#### Resource `%s · %s/%s` (%s, severity: %s%s)\n\n", report.Name, resource.Kind, resource.Name, resource.State, resource.Assessment.Level, validationSuffix(resource.Validation))
 			if detail := validationCoverageLine(resource.Validation); detail != "" {
-				fmt.Fprintf(&b, "- validation coverage: %s\n\n", detail)
+				fmt.Fprintf(&b, "- validation coverage: %s\n", detail)
 			}
 			if findings := topValidationFindings(resource, 3); len(findings) > 0 {
 				for _, finding := range findings {
 					fmt.Fprintf(&b, "- validation: %s\n", finding)
 				}
-				fmt.Fprintln(&b)
 			}
 			if findings := topFindings(resource, 3); len(findings) > 0 {
 				for _, finding := range findings {
 					fmt.Fprintf(&b, "- %s\n", finding)
 				}
+			}
+			if detail := validationCoverageLine(resource.Validation); detail != "" || len(topValidationFindings(resource, 3)) > 0 || len(topFindings(resource, 3)) > 0 {
 				fmt.Fprintln(&b)
 			}
 			semanticMarkdown, err := diff.RenderSemanticMarkdown(resource.Result.Changes)
@@ -451,6 +464,16 @@ func stateWeight(state string) int {
 	}
 }
 
+type reviewHighlight struct {
+	validation validate.Status
+	level      severity.Level
+	cluster    string
+	kind       string
+	name       string
+	finding    string
+	anchor     string
+}
+
 func renderTopSummary(b *strings.Builder, reports []ClusterReport) {
 	type counts struct{ added, removed, changed int }
 	totalClusters := len(reports)
@@ -500,6 +523,16 @@ func renderTopSummary(b *strings.Builder, reports []ClusterReport) {
 	if summary := formatSeveritySummary(severityCounts); summary != "" {
 		fmt.Fprintf(b, "**Severity:** %s\n\n", summary)
 	}
+	if validationErrors > 0 || severityCounts[severity.LevelCritical] > 0 {
+		fmt.Fprintln(b, "> [!caution]")
+		if validationErrors > 0 {
+			fmt.Fprintf(b, "> Validation errors detected: %d\n", validationErrors)
+		}
+		if severityCounts[severity.LevelCritical] > 0 {
+			fmt.Fprintf(b, "> Critical findings detected: %d\n", severityCounts[severity.LevelCritical])
+		}
+		fmt.Fprintln(b)
+	}
 	fmt.Fprintf(b, "**Validation:** %d errors, %d warnings, %d unvalidated\n\n", validationErrors, validationWarnings, unvalidatedResources)
 	if renderWarnings > 0 {
 		fmt.Fprintf(b, "**Render warnings:** %d skipped release(s)\n\n", renderWarnings)
@@ -510,9 +543,12 @@ func renderTopSummary(b *strings.Builder, reports []ClusterReport) {
 	if len(highlights) > 0 {
 		fmt.Fprintln(b, "**Highlights**")
 		fmt.Fprintln(b)
+		fmt.Fprintln(b, "| Severity | Cluster | Resource | Finding |")
+		fmt.Fprintln(b, "| --- | --- | --- | --- |")
 		for _, highlight := range highlights {
-			fmt.Fprintf(b, "- %s\n", highlight)
+			fmt.Fprintf(b, "| %s | `%s` | [%s](#%s) | %s |\n", severityBadge(highlight.level), highlight.cluster, fmt.Sprintf("`%s/%s`", highlight.kind, highlight.name), highlight.anchor, escapeTable(highlight.finding))
 		}
+		fmt.Fprintln(b)
 	}
 }
 
@@ -641,42 +677,53 @@ func chartSeverityCounts(chart ChartReport) map[severity.Level]int {
 	return counts
 }
 
-func collectReviewHighlights(reports []ClusterReport, limit int) []string {
-	type highlight struct {
-		validation validate.Status
-		level      severity.Level
-		text       string
-	}
-	var items []highlight
+func collectReviewHighlights(reports []ClusterReport, limit int) []reviewHighlight {
+	var items []reviewHighlight
 	for _, report := range reports {
 		for _, chart := range report.Charts {
 			if chart.RenderWarning != "" {
-				items = append(items, highlight{
+				items = append(items, reviewHighlight{
 					validation: validate.StatusWarning,
 					level:      severity.LevelInfo,
-					text:       fmt.Sprintf("Cluster `%s` · chart `%s` [render-warning]: %s", report.Name, chart.Name, chart.RenderWarning),
+					cluster:    report.Name,
+					kind:       "Chart",
+					name:       chart.Name,
+					finding:    "render warning: " + chart.RenderWarning,
+					anchor:     chartAnchor(report.Name, chart.Name),
 				})
 			}
 			for _, warning := range chart.Warnings {
-				items = append(items, highlight{
+				items = append(items, reviewHighlight{
 					validation: validate.StatusWarning,
 					level:      severity.LevelInfo,
-					text:       fmt.Sprintf("Cluster `%s` · chart `%s` [warning]: %s", report.Name, chart.Name, warning),
+					cluster:    report.Name,
+					kind:       "Chart",
+					name:       chart.Name,
+					finding:    "validation warning: " + warning,
+					anchor:     chartAnchor(report.Name, chart.Name),
 				})
 			}
 			for _, resource := range chart.Resources {
 				for _, finding := range topValidationFindings(resource, 2) {
-					items = append(items, highlight{
+					items = append(items, reviewHighlight{
 						validation: resource.Validation.Status,
 						level:      resource.Assessment.Level,
-						text:       fmt.Sprintf("Cluster `%s` · `%s/%s` [validation:%s]: %s", report.Name, resource.Kind, resource.Name, resource.Validation.Status, finding),
+						cluster:    report.Name,
+						kind:       resource.Kind,
+						name:       resource.Name,
+						finding:    fmt.Sprintf("validation %s: %s", resource.Validation.Status, finding),
+						anchor:     resourceAnchor(report.Name, resource.Kind, resource.Name),
 					})
 				}
 				for _, finding := range topFindings(resource, 2) {
-					items = append(items, highlight{
+					items = append(items, reviewHighlight{
 						validation: resource.Validation.Status,
 						level:      resource.Assessment.Level,
-						text:       fmt.Sprintf("Cluster `%s` · `%s/%s` [%s]: %s", report.Name, resource.Kind, resource.Name, resource.Assessment.Level, finding),
+						cluster:    report.Name,
+						kind:       resource.Kind,
+						name:       resource.Name,
+						finding:    finding,
+						anchor:     resourceAnchor(report.Name, resource.Kind, resource.Name),
 					})
 				}
 			}
@@ -689,16 +736,25 @@ func collectReviewHighlights(reports []ClusterReport, limit int) []string {
 		if severity.Rank(items[i].level) != severity.Rank(items[j].level) {
 			return severity.Rank(items[i].level) > severity.Rank(items[j].level)
 		}
-		return items[i].text < items[j].text
+		if items[i].cluster != items[j].cluster {
+			return items[i].cluster < items[j].cluster
+		}
+		if items[i].kind != items[j].kind {
+			return items[i].kind < items[j].kind
+		}
+		if items[i].name != items[j].name {
+			return items[i].name < items[j].name
+		}
+		return items[i].finding < items[j].finding
 	})
-	out := make([]string, 0, limit)
+	out := make([]reviewHighlight, 0, limit)
 	for _, item := range items {
-		out = append(out, item.text)
+		out = append(out, item)
 		if len(out) >= limit {
 			break
 		}
 	}
-	return dedupeStrings(out)
+	return dedupeHighlights(out)
 }
 
 func formatSeveritySummary(counts map[severity.Level]int) string {
@@ -783,6 +839,87 @@ func renderFooter(b *strings.Builder, opts NoteRenderOptions) {
 		fmt.Fprintln(b, "_Report compares merge-base and current MR state._")
 	}
 	fmt.Fprintln(b)
+}
+
+func renderCommentTOC(b *strings.Builder, reports []ClusterReport) {
+	fmt.Fprintln(b, "**Navigation**")
+	fmt.Fprintln(b)
+	for _, report := range reports {
+		fmt.Fprintf(b, "- [%s](#%s) · added %d · removed %d · changed %d\n", report.Name, clusterAnchor(report.Name), report.Added, report.Removed, report.Changed)
+	}
+}
+
+func chartVersionSuffix(chart ChartReport) string {
+	if !chart.HasRemoteSource {
+		return ""
+	}
+	if chart.BaselineTargetRevision == "" || chart.CurrentTargetRevision == "" || chart.BaselineTargetRevision == chart.CurrentTargetRevision {
+		return ""
+	}
+	return fmt.Sprintf(" · version %s → %s", chart.BaselineTargetRevision, chart.CurrentTargetRevision)
+}
+
+func severityBadge(level severity.Level) string {
+	switch level {
+	case severity.LevelCritical:
+		return "🔴 critical"
+	case severity.LevelHigh:
+		return "🟠 high"
+	case severity.LevelMedium:
+		return "🟡 medium"
+	case severity.LevelLow:
+		return "🟢 low"
+	default:
+		return "🔵 info"
+	}
+}
+
+func clusterAnchor(cluster string) string {
+	return "cluster-" + anchorSlug(cluster)
+}
+
+func chartAnchor(cluster, chart string) string {
+	return "chart-" + anchorSlug(cluster) + "-" + anchorSlug(chart)
+}
+
+func resourceAnchor(cluster, kind, name string) string {
+	return "resource-" + anchorSlug(cluster) + "-" + anchorSlug(kind) + "-" + anchorSlug(name)
+}
+
+func anchorSlug(parts ...string) string {
+	raw := strings.ToLower(strings.Join(parts, "-"))
+	var b strings.Builder
+	lastDash := false
+	for _, r := range raw {
+		if (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') {
+			b.WriteRune(r)
+			lastDash = false
+			continue
+		}
+		if !lastDash {
+			b.WriteByte('-')
+			lastDash = true
+		}
+	}
+	return strings.Trim(b.String(), "-")
+}
+
+func escapeTable(s string) string {
+	return strings.ReplaceAll(s, "|", "\\|")
+}
+
+func dedupeHighlights(in []reviewHighlight) []reviewHighlight {
+	seen := map[string]struct{}{}
+	out := make([]reviewHighlight, 0, len(in))
+	for _, item := range in {
+		key := item.cluster + "\x00" + item.kind + "\x00" + item.name + "\x00" + item.finding + "\x00" + item.anchor + "\x00" + string(item.level) + "\x00" + string(item.validation)
+		if _, ok := seen[key]; ok {
+			continue
+		}
+		seen[key] = struct{}{}
+		out = append(out, item)
+	}
+	return out
 }
 
 func emptyToNone(v string) string {
