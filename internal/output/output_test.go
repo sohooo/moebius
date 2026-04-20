@@ -92,17 +92,26 @@ func TestRenderCommentBody_IncludesRenderWarnings(t *testing.T) {
 	if !strings.Contains(body, "| Severity | Cluster | Resource | Finding |") {
 		t.Fatalf("expected highlights table in body, got %s", body)
 	}
-	if !strings.Contains(body, "render warning: cluster \"kube-bravo\" release \"argocd\"") {
+	if !strings.Contains(body, "analysis partial: render warning skipped detailed diff") {
 		t.Fatalf("expected render warning highlight in body, got %s", body)
 	}
 	if !strings.Contains(body, "[`Chart/argocd`](#chart-kube-bravo-argocd)") {
 		t.Fatalf("expected render warning chart link in body, got %s", body)
+	}
+	if !strings.Contains(body, "Analysis is partial.") {
+		t.Fatalf("expected partial analysis summary in body, got %s", body)
+	}
+	if !strings.Contains(body, "1 release(s) skipped due to render warnings.") {
+		t.Fatalf("expected skipped release summary in body, got %s", body)
 	}
 	if !strings.Contains(body, "Render warnings:** 1 skipped release(s)") {
 		t.Fatalf("expected render warning summary in body, got %s", body)
 	}
 	if !strings.Contains(body, "> [!important]") {
 		t.Fatalf("expected important alert in body, got %s", body)
+	}
+	if !strings.Contains(body, "- Summary: render skipped · highest severity info · analysis partial") {
+		t.Fatalf("expected chart summary bullet in body, got %s", body)
 	}
 }
 
@@ -119,8 +128,14 @@ func TestRenderCommentBody_LinksHighlightsAndShowsVersionChanges(t *testing.T) {
 	if !strings.Contains(body, "[`ClusterRole/hello-world`](#resource-kube-bravo-clusterrole-hello-world)") {
 		t.Fatalf("expected linked highlight resource in body, got %s", body)
 	}
+	if !strings.Contains(body, "[`Chart/hello-world`](#chart-kube-bravo-hello-world) | version upgrade: 10.3.0 → 12.0.2") {
+		t.Fatalf("expected linked version-upgrade highlight in body, got %s", body)
+	}
 	if !strings.Contains(body, "version 10.3.0 → 12.0.2") {
 		t.Fatalf("expected chart version change in body, got %s", body)
+	}
+	if !strings.Contains(body, "- Summary: version 10.3.0 → 12.0.2 · 2 resources affected · highest severity critical") {
+		t.Fatalf("expected chart summary bullet with version change in body, got %s", body)
 	}
 }
 
@@ -138,6 +153,66 @@ func TestRenderCommentBody_UsesUniqueResourceAnchorsAcrossClusters(t *testing.T)
 	}
 	if !strings.Contains(body, `id="resource-kube-charlie-deployment-hello-world"`) {
 		t.Fatalf("expected kube-charlie resource anchor in body, got %s", body)
+	}
+}
+
+func TestSortReportsForComment_PrioritizesRemovedBeforeChangedBeforeAdded(t *testing.T) {
+	reports := []ClusterReport{{
+		Name: "kube-bravo",
+		Charts: []ChartReport{{
+			Name: "hello-world",
+			Resources: []ResourceReport{
+				{Kind: "ConfigMap", Name: "added", State: "added", Assessment: severity.Assessment{Level: severity.LevelMedium}, Validation: validate.Result{Status: validate.StatusValid}},
+				{Kind: "ConfigMap", Name: "changed", State: "changed", Assessment: severity.Assessment{Level: severity.LevelMedium}, Validation: validate.Result{Status: validate.StatusValid}},
+				{Kind: "ConfigMap", Name: "removed", State: "removed", Assessment: severity.Assessment{Level: severity.LevelMedium}, Validation: validate.Result{Status: validate.StatusValid}},
+			},
+		}},
+	}}
+
+	sortReportsForComment(reports)
+
+	got := []string{
+		reports[0].Charts[0].Resources[0].Name,
+		reports[0].Charts[0].Resources[1].Name,
+		reports[0].Charts[0].Resources[2].Name,
+	}
+	want := []string{"removed", "changed", "added"}
+	if strings.Join(got, ",") != strings.Join(want, ",") {
+		t.Fatalf("unexpected resource order: got %v want %v", got, want)
+	}
+}
+
+func TestRenderCommentBody_IncludesPermissivePartialAnalysisWarning(t *testing.T) {
+	report := ClusterReport{
+		Name:    "kube-bravo",
+		Added:   0,
+		Removed: 0,
+		Changed: 1,
+		Charts: []ChartReport{
+			{
+				Name:      "hello-world",
+				Namespace: "demo",
+				Warnings: []string{
+					`duplicate key "prometheus.io/scrape" accepted with last-wins behavior`,
+					`duplicate key "prometheus.io/port" accepted with last-wins behavior`,
+				},
+				Resources: sampleClusterReport().Charts[0].Resources[:1],
+			},
+		},
+	}
+
+	body, err := RenderCommentBody([]ClusterReport{report}, diff.ModeSemantic, NoteMetadata{CommitSHA: "deadbeef"})
+	if err != nil {
+		t.Fatalf("RenderCommentBody returned error: %v", err)
+	}
+	if !strings.Contains(body, "Analysis is partial.") {
+		t.Fatalf("expected partial analysis summary in body, got %s", body)
+	}
+	if !strings.Contains(body, "duplicate YAML keys accepted with last-wins behavior: 2 override(s).") {
+		t.Fatalf("expected last-wins summary in body, got %s", body)
+	}
+	if !strings.Contains(body, "- Summary: 1 resource affected · highest severity high · analysis partial") {
+		t.Fatalf("expected chart summary bullet with partial analysis in body, got %s", body)
 	}
 }
 

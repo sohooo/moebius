@@ -37,6 +37,7 @@ Charts with changes: 1
 <details>
 <summary>Chart `hello-world` · namespace `hello-world` · severity `high` · added 0 · removed 0 · changed 1</summary>
 
+- Summary: 1 resource affected · highest severity high
 - Kinds affected: Deployment
 - Scope: value-level tweaks only
 - Severity summary: high 1

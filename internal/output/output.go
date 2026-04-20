@@ -295,7 +295,8 @@ func renderClusterComment(report ClusterReport, mode diff.Mode, opts NoteRenderO
 	for _, chart := range report.Charts {
 		added, removed, changed := chartChangeCounts(chart)
 		fmt.Fprintf(&b, "<a id=\"%s\"></a>\n", chartAnchor(report.Name, chart.Name))
-		fmt.Fprintf(&b, "<details>\n<summary>Chart `%s` · namespace `%s` · severity `%s` · added %d · removed %d · changed %d%s</summary>\n\n", chart.Name, emptyToNone(chart.Namespace), chartSeverity(chart), added, removed, changed, chartVersionSuffix(chart))
+		fmt.Fprintf(&b, "<details>\n<summary>%s</summary>\n\n", chartSummaryLine(chart, added, removed, changed))
+		fmt.Fprintf(&b, "- Summary: %s\n", chartSummaryBullet(chart, added, removed, changed))
 		if chart.RenderWarning != "" {
 			fmt.Fprintf(&b, "> [!important]\n> Render warning: %s\n\n", chart.RenderWarning)
 			fmt.Fprintln(&b, "</details>")
@@ -444,10 +445,10 @@ func sortReportsForComment(reports []ClusterReport) {
 				if stateWeight(left.State) != stateWeight(right.State) {
 					return stateWeight(left.State) < stateWeight(right.State)
 				}
-				if left.Kind != right.Kind {
-					return left.Kind < right.Kind
+				if left.Name != right.Name {
+					return left.Name < right.Name
 				}
-				return left.Name < right.Name
+				return left.Kind < right.Kind
 			})
 		}
 	}
@@ -457,10 +458,12 @@ func stateWeight(state string) int {
 	switch state {
 	case "removed":
 		return 0
-	case "added":
+	case "changed":
 		return 1
-	default:
+	case "added":
 		return 2
+	default:
+		return 3
 	}
 }
 
@@ -472,6 +475,8 @@ type reviewHighlight struct {
 	name       string
 	finding    string
 	anchor     string
+	state      string
+	priority   int
 }
 
 func renderTopSummary(b *strings.Builder, reports []ClusterReport) {
@@ -534,11 +539,19 @@ func renderTopSummary(b *strings.Builder, reports []ClusterReport) {
 		fmt.Fprintln(b)
 	}
 	fmt.Fprintf(b, "**Validation:** %d errors, %d warnings, %d unvalidated\n\n", validationErrors, validationWarnings, unvalidatedResources)
-	if renderWarnings > 0 {
-		fmt.Fprintf(b, "**Render warnings:** %d skipped release(s)\n\n", renderWarnings)
-	}
-	if renderNotices > 0 {
-		fmt.Fprintf(b, "**Permissive YAML warnings:** %d duplicate-key override(s)\n\n", renderNotices)
+	if renderWarnings > 0 || renderNotices > 0 {
+		fmt.Fprintln(b, "> [!important]")
+		fmt.Fprintln(b, "> Analysis is partial.")
+		if renderWarnings > 0 {
+			fmt.Fprintf(b, "> %d release(s) skipped due to render warnings.\n", renderWarnings)
+			fmt.Fprintf(b, "**Render warnings:** %d skipped release(s)\n\n", renderWarnings)
+		}
+		if renderNotices > 0 {
+			fmt.Fprintf(b, "> duplicate YAML keys accepted with last-wins behavior: %d override(s).\n", renderNotices)
+			fmt.Fprintf(b, "**Permissive YAML warnings:** %d duplicate-key override(s)\n\n", renderNotices)
+		} else {
+			fmt.Fprintln(b)
+		}
 	}
 	if len(highlights) > 0 {
 		fmt.Fprintln(b, "**Highlights**")
@@ -582,20 +595,14 @@ func onlyValueTweaks(chart ChartReport) bool {
 
 func collectNotableChanges(chart ChartReport) []string {
 	if chart.RenderWarning != "" {
-		return []string{fmt.Sprintf("[render-warning] %s", chart.RenderWarning)}
+		return []string{"analysis partial: render warning skipped detailed diff"}
 	}
 	if len(chart.Warnings) > 0 {
-		return append([]string(nil), chart.Warnings...)
+		return []string{fmt.Sprintf("analysis partial: duplicate YAML keys accepted with last-wins behavior (%d override(s))", len(chart.Warnings))}
 	}
 	var out []string
 	for _, resource := range chart.Resources {
-		for _, line := range topValidationFindings(resource, 2) {
-			out = append(out, fmt.Sprintf("`%s/%s` [validation:%s]: %s", resource.Kind, resource.Name, resource.Validation.Status, line))
-			if len(out) >= 5 {
-				return out
-			}
-		}
-		for _, line := range topFindings(resource, 3) {
+		if line := primaryResourceHighlight(resource); line != "" {
 			out = append(out, fmt.Sprintf("`%s/%s` [%s]: %s", resource.Kind, resource.Name, resource.Assessment.Level, line))
 			if len(out) >= 5 {
 				return out
@@ -681,6 +688,18 @@ func collectReviewHighlights(reports []ClusterReport, limit int) []reviewHighlig
 	var items []reviewHighlight
 	for _, report := range reports {
 		for _, chart := range report.Charts {
+			if versionChange := chartVersionChange(chart); versionChange != "" {
+				items = append(items, reviewHighlight{
+					validation: validate.StatusValid,
+					level:      chartSeverity(chart),
+					cluster:    report.Name,
+					kind:       "Chart",
+					name:       chart.Name,
+					finding:    "version upgrade: " + versionChange,
+					anchor:     chartAnchor(report.Name, chart.Name),
+					priority:   2,
+				})
+			}
 			if chart.RenderWarning != "" {
 				items = append(items, reviewHighlight{
 					validation: validate.StatusWarning,
@@ -688,34 +707,25 @@ func collectReviewHighlights(reports []ClusterReport, limit int) []reviewHighlig
 					cluster:    report.Name,
 					kind:       "Chart",
 					name:       chart.Name,
-					finding:    "render warning: " + chart.RenderWarning,
+					finding:    "analysis partial: render warning skipped detailed diff",
 					anchor:     chartAnchor(report.Name, chart.Name),
+					priority:   1,
 				})
 			}
-			for _, warning := range chart.Warnings {
+			if len(chart.Warnings) > 0 {
 				items = append(items, reviewHighlight{
 					validation: validate.StatusWarning,
 					level:      severity.LevelInfo,
 					cluster:    report.Name,
 					kind:       "Chart",
 					name:       chart.Name,
-					finding:    "validation warning: " + warning,
+					finding:    fmt.Sprintf("analysis partial: duplicate YAML keys accepted with last-wins behavior (%d override(s))", len(chart.Warnings)),
 					anchor:     chartAnchor(report.Name, chart.Name),
+					priority:   1,
 				})
 			}
 			for _, resource := range chart.Resources {
-				for _, finding := range topValidationFindings(resource, 2) {
-					items = append(items, reviewHighlight{
-						validation: resource.Validation.Status,
-						level:      resource.Assessment.Level,
-						cluster:    report.Name,
-						kind:       resource.Kind,
-						name:       resource.Name,
-						finding:    fmt.Sprintf("validation %s: %s", resource.Validation.Status, finding),
-						anchor:     resourceAnchor(report.Name, resource.Kind, resource.Name),
-					})
-				}
-				for _, finding := range topFindings(resource, 2) {
+				if finding := primaryResourceHighlight(resource); finding != "" {
 					items = append(items, reviewHighlight{
 						validation: resource.Validation.Status,
 						level:      resource.Assessment.Level,
@@ -724,17 +734,25 @@ func collectReviewHighlights(reports []ClusterReport, limit int) []reviewHighlig
 						name:       resource.Name,
 						finding:    finding,
 						anchor:     resourceAnchor(report.Name, resource.Kind, resource.Name),
+						state:      resource.State,
+						priority:   resourceHighlightPriority(resource),
 					})
 				}
 			}
 		}
 	}
 	sort.SliceStable(items, func(i, j int) bool {
+		if items[i].priority != items[j].priority {
+			return items[i].priority < items[j].priority
+		}
 		if validateStatusRank(items[i].validation) != validateStatusRank(items[j].validation) {
 			return validateStatusRank(items[i].validation) > validateStatusRank(items[j].validation)
 		}
 		if severity.Rank(items[i].level) != severity.Rank(items[j].level) {
 			return severity.Rank(items[i].level) > severity.Rank(items[j].level)
+		}
+		if stateWeight(items[i].state) != stateWeight(items[j].state) {
+			return stateWeight(items[i].state) < stateWeight(items[j].state)
 		}
 		if items[i].cluster != items[j].cluster {
 			return items[i].cluster < items[j].cluster
@@ -850,13 +868,57 @@ func renderCommentTOC(b *strings.Builder, reports []ClusterReport) {
 }
 
 func chartVersionSuffix(chart ChartReport) string {
+	if versionChange := chartVersionChange(chart); versionChange != "" {
+		return " · version " + versionChange
+	}
+	return ""
+}
+
+func chartVersionChange(chart ChartReport) string {
 	if !chart.HasRemoteSource {
 		return ""
 	}
 	if chart.BaselineTargetRevision == "" || chart.CurrentTargetRevision == "" || chart.BaselineTargetRevision == chart.CurrentTargetRevision {
 		return ""
 	}
-	return fmt.Sprintf(" · version %s → %s", chart.BaselineTargetRevision, chart.CurrentTargetRevision)
+	return fmt.Sprintf("%s → %s", chart.BaselineTargetRevision, chart.CurrentTargetRevision)
+}
+
+func chartSummaryLine(chart ChartReport, added, removed, changed int) string {
+	parts := []string{fmt.Sprintf("Chart `%s`", chart.Name)}
+	if versionChange := chartVersionChange(chart); versionChange != "" {
+		parts = append(parts, "version "+versionChange)
+	}
+	parts = append(parts,
+		fmt.Sprintf("namespace `%s`", emptyToNone(chart.Namespace)),
+		fmt.Sprintf("severity `%s`", chartSeverity(chart)),
+		fmt.Sprintf("added %d", added),
+		fmt.Sprintf("removed %d", removed),
+		fmt.Sprintf("changed %d", changed),
+	)
+	return strings.Join(parts, " · ")
+}
+
+func chartSummaryBullet(chart ChartReport, added, removed, changed int) string {
+	var parts []string
+	if versionChange := chartVersionChange(chart); versionChange != "" {
+		parts = append(parts, "version "+versionChange)
+	}
+	total := added + removed + changed
+	if chart.RenderWarning != "" {
+		parts = append(parts, "render skipped")
+	} else if total > 0 {
+		if total == 1 {
+			parts = append(parts, "1 resource affected")
+		} else {
+			parts = append(parts, fmt.Sprintf("%d resources affected", total))
+		}
+	}
+	parts = append(parts, "highest severity "+string(chartSeverity(chart)))
+	if chart.RenderWarning != "" || len(chart.Warnings) > 0 {
+		parts = append(parts, "analysis partial")
+	}
+	return strings.Join(parts, " · ")
 }
 
 func severityBadge(level severity.Level) string {
@@ -920,6 +982,42 @@ func dedupeHighlights(in []reviewHighlight) []reviewHighlight {
 		out = append(out, item)
 	}
 	return out
+}
+
+func primaryResourceHighlight(resource ResourceReport) string {
+	if len(resource.Validation.Findings) > 0 && resource.Validation.Status != validate.StatusValid {
+		line := resource.Validation.Findings[0].Message
+		if resource.Validation.Findings[0].Path != "" {
+			line = fmt.Sprintf("%s (%s)", line, resource.Validation.Findings[0].Path)
+		}
+		return fmt.Sprintf("validation %s: %s", resource.Validation.Status, line)
+	}
+	if len(resource.Assessment.Findings) > 0 {
+		return resource.Assessment.Findings[0].Reason
+	}
+	return ""
+}
+
+func resourceHighlightPriority(resource ResourceReport) int {
+	switch resource.Validation.Status {
+	case validate.StatusError:
+		return 0
+	case validate.StatusWarning:
+		return 0
+	}
+	if resource.Assessment.Level == severity.LevelCritical || resource.Assessment.Level == severity.LevelHigh {
+		return 3
+	}
+	switch resource.State {
+	case "removed":
+		return 4
+	case "changed":
+		return 5
+	case "added":
+		return 6
+	default:
+		return 7
+	}
 }
 
 func emptyToNone(v string) string {

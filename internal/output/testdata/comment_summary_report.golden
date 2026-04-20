@@ -45,6 +45,7 @@ Charts with changes: 1
 <details>
 <summary>Chart `hello-world` · namespace `demo` · severity `critical` · added 0 · removed 0 · changed 2</summary>
 
+- Summary: 2 resources affected · highest severity critical
 - Kinds affected: ClusterRole, Deployment
 - Scope: value-level tweaks only
 - Severity summary: critical 1, high 1
