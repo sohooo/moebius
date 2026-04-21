@@ -51,13 +51,13 @@ If you set `--base-ref master` explicitly, you may still see the older error:
 could not resolve git revision "master"
 ```
 
-## `401 Unauthorized` on MR notes
+## `401 Unauthorized` on MR publishing
 
 What it means:
-- the resolved GitLab token is missing, invalid, or not accepted for the notes API
+- the resolved GitLab token is missing, invalid, or not accepted for the GitLab MR API
 
 Most common cause:
-- relying on `CI_JOB_TOKEN` for note creation
+- relying on `CI_JOB_TOKEN` for MR description updates or note creation
 
 How to verify:
 - open `.mobius-out/comment-preflight.json`
@@ -77,19 +77,19 @@ variables:
   GITLAB_TOKEN: "${MOBIUS_GITLAB_TOKEN}"
 ```
 
-## Token can read but cannot create MR notes
+## Token can read but cannot publish the MR report
 
 What it means:
-- the token can reach the merge request notes API
-- it does not have permission to create or update notes
+- the token can reach the merge request API
+- it does not have permission to update the MR description, or notes when `--publish-target note` is used
 
 Typical case:
-- `CI_JOB_TOKEN` works for read/list, but not for note creation
+- `CI_JOB_TOKEN` works for read/list, but not for MR description updates or note creation
 
 How to verify:
 - inspect `.mobius-out/comment-preflight.json`
 - look for a message like:
-  - token can read the merge request but cannot create MR notes
+  - token can read the merge request but cannot update its description
 
 Fix:
 - replace `CI_JOB_TOKEN` with `GITLAB_TOKEN`
@@ -141,7 +141,7 @@ Behavior in that mode:
 Verify via:
 - `.mobius-out/warnings/`
 - `.mobius-out/comment-preflight.json`
-- stdout / MR note warnings
+- stdout / MR report warnings
 
 ## `.mobius-out` is missing
 

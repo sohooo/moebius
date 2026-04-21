@@ -156,6 +156,60 @@ func TestRenderCommentBody_UsesUniqueResourceAnchorsAcrossClusters(t *testing.T)
 	}
 }
 
+func TestRenderDescriptionBody_UsesMobiusHeadingsAndLinks(t *testing.T) {
+	body, err := RenderDescriptionBodyWithOptions([]ClusterReport{sampleClusterReport()}, diff.ModeSemantic, NoteMetadata{CommitSHA: "deadbeef"}, NoteRenderOptions{
+		Mode:   cli.CommentModeFull,
+		Status: "changes detected",
+	})
+	if err != nil {
+		t.Fatalf("RenderDescriptionBodyWithOptions returned error: %v", err)
+	}
+	if strings.Contains(body, `<a id=`) {
+		t.Fatalf("description body must not contain custom anchor tags:\n%s", body)
+	}
+	if !strings.Contains(body, "[kube-bravo](#mobius-cluster-kube-bravo)") {
+		t.Fatalf("expected mobius cluster navigation link:\n%s", body)
+	}
+	if !strings.Contains(body, "[`Deployment/hello-world`](#mobius-resource-kube-bravo-hello-world-demo-deployment-hello-world)") {
+		t.Fatalf("expected mobius resource highlight link:\n%s", body)
+	}
+	if !strings.Contains(body, "## mobius cluster kube-bravo") {
+		t.Fatalf("expected mobius cluster heading:\n%s", body)
+	}
+	if !strings.Contains(body, "### mobius chart kube-bravo hello-world") {
+		t.Fatalf("expected mobius chart heading:\n%s", body)
+	}
+	if !strings.Contains(body, "#### mobius resource kube-bravo hello-world demo Deployment hello-world") {
+		t.Fatalf("expected mobius resource heading:\n%s", body)
+	}
+	if strings.Contains(body, "#møbius") || strings.Contains(body, "## møbius") || strings.Contains(body, "### møbius") || strings.Contains(body, "#### møbius") {
+		t.Fatalf("actionable links and heading targets must use ASCII mobius:\n%s", body)
+	}
+}
+
+func TestRenderDescriptionBody_ResourceLinksIncludeChartAndNamespace(t *testing.T) {
+	report := sampleClusterReport()
+	second := report.Charts[0]
+	second.Name = "other-chart"
+	second.Namespace = "other"
+	second.Resources = append([]ResourceReport(nil), second.Resources...)
+	second.Resources[0].Namespace = "other"
+	report.Charts = append(report.Charts, second)
+
+	body, err := RenderDescriptionBodyWithOptions([]ClusterReport{report}, diff.ModeSemantic, NoteMetadata{}, NoteRenderOptions{
+		Mode:   cli.CommentModeFull,
+		Status: "changes detected",
+	})
+	if err != nil {
+		t.Fatalf("RenderDescriptionBodyWithOptions returned error: %v", err)
+	}
+	firstAnchor := "#mobius-resource-kube-bravo-hello-world-demo-deployment-hello-world"
+	secondAnchor := "#mobius-resource-kube-bravo-other-chart-other-deployment-hello-world"
+	if !strings.Contains(body, firstAnchor) || !strings.Contains(body, secondAnchor) {
+		t.Fatalf("expected resource anchors to include chart and namespace:\n%s", body)
+	}
+}
+
 func TestSortReportsForComment_PrioritizesRemovedBeforeChangedBeforeAdded(t *testing.T) {
 	reports := []ClusterReport{{
 		Name: "kube-bravo",

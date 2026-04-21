@@ -23,7 +23,7 @@ func TestServicePost_CreatesNoteWhenMissing(t *testing.T) {
 		},
 	}
 
-	result, err := service.Post(context.Background(), cli.Options{DiffMode: cli.DiffModeSemantic}, sampleReports())
+	result, err := service.Post(context.Background(), cli.Options{DiffMode: cli.DiffModeSemantic, PublishTarget: cli.PublishTargetNote}, sampleReports())
 	if err != nil {
 		t.Fatalf("Post returned error: %v", err)
 	}
@@ -48,7 +48,7 @@ func TestServicePost_UpdatesExistingStickyNote(t *testing.T) {
 		},
 	}
 
-	result, err := service.Post(context.Background(), cli.Options{DiffMode: cli.DiffModeSemantic}, sampleReports())
+	result, err := service.Post(context.Background(), cli.Options{DiffMode: cli.DiffModeSemantic, PublishTarget: cli.PublishTargetNote}, sampleReports())
 	if err != nil {
 		t.Fatalf("Post returned error: %v", err)
 	}
@@ -85,7 +85,7 @@ func TestServicePost_SkipsUpdateWhenBodyMatches(t *testing.T) {
 		return gitlab.Target{ProjectID: "1", MergeRequestIID: "7", BaseURL: "https://gitlab.example/api/v4", Token: "token", TokenKind: gitlab.TokenKindPrivate}, nil
 	}
 
-	result, err := service.Post(context.Background(), cli.Options{DiffMode: cli.DiffModeSemantic}, sampleReports())
+	result, err := service.Post(context.Background(), cli.Options{DiffMode: cli.DiffModeSemantic, PublishTarget: cli.PublishTargetNote}, sampleReports())
 	if err != nil {
 		t.Fatalf("Post returned error: %v", err)
 	}
@@ -109,6 +109,7 @@ func TestServicePost_FallsBackToSummaryArtifactsWhenCommentTooLarge(t *testing.T
 	result, err := service.Post(context.Background(), cli.Options{
 		DiffMode:        cli.DiffModeSemantic,
 		CommentMode:     cli.CommentModeFull,
+		PublishTarget:   cli.PublishTargetNote,
 		MaxCommentBytes: 400,
 		BaseRef:         "master",
 	}, sampleReports())
@@ -123,6 +124,87 @@ func TestServicePost_FallsBackToSummaryArtifactsWhenCommentTooLarge(t *testing.T
 	}
 	if !strings.Contains(client.createdBody, "Compact summary mode") {
 		t.Fatalf("expected compact summary footer in body:\n%s", client.createdBody)
+	}
+}
+
+func TestServicePost_AppendsDescriptionBlockByDefault(t *testing.T) {
+	client := &fakeNoteClient{description: "Original MR description.\n"}
+	service := &Service{
+		newClient: func(baseURL, token string, tokenKind gitlab.TokenKind) (NoteClient, error) { return client, nil },
+		resolve: func(opts cli.Options) (gitlab.Target, error) {
+			return gitlab.Target{ProjectID: "1", MergeRequestIID: "7", BaseURL: "https://gitlab.example/api/v4", Token: "token", TokenKind: gitlab.TokenKindPrivate}, nil
+		},
+	}
+
+	result, err := service.Post(context.Background(), cli.Options{DiffMode: cli.DiffModeSemantic}, sampleReports())
+	if err != nil {
+		t.Fatalf("Post returned error: %v", err)
+	}
+	if result.Action != "created" {
+		t.Fatalf("expected created action, got %q", result.Action)
+	}
+	if !strings.HasPrefix(client.updatedDescription, "Original MR description.\n\n"+descriptionStartMarker) {
+		t.Fatalf("expected managed block appended after existing description:\n%s", client.updatedDescription)
+	}
+	if !strings.Contains(client.updatedDescription, "## mobius cluster kube-bravo") {
+		t.Fatalf("expected description report heading:\n%s", client.updatedDescription)
+	}
+	if client.createdBody != "" {
+		t.Fatalf("expected no note creation, got %q", client.createdBody)
+	}
+}
+
+func TestServicePost_ReplacesExistingDescriptionBlock(t *testing.T) {
+	client := &fakeNoteClient{description: "Intro\n\n" + descriptionStartMarker + "\nold report\n" + descriptionEndMarker + "\n\nTail\n"}
+	service := &Service{
+		newClient: func(baseURL, token string, tokenKind gitlab.TokenKind) (NoteClient, error) { return client, nil },
+		resolve: func(opts cli.Options) (gitlab.Target, error) {
+			return gitlab.Target{ProjectID: "1", MergeRequestIID: "7", BaseURL: "https://gitlab.example/api/v4", Token: "token", TokenKind: gitlab.TokenKindPrivate}, nil
+		},
+	}
+
+	result, err := service.Post(context.Background(), cli.Options{DiffMode: cli.DiffModeSemantic}, sampleReports())
+	if err != nil {
+		t.Fatalf("Post returned error: %v", err)
+	}
+	if result.Action != "updated" {
+		t.Fatalf("expected updated action, got %q", result.Action)
+	}
+	if strings.Contains(client.updatedDescription, "old report") {
+		t.Fatalf("expected old report to be replaced:\n%s", client.updatedDescription)
+	}
+	if !strings.HasPrefix(client.updatedDescription, "Intro\n\n"+descriptionStartMarker) || !strings.Contains(client.updatedDescription, "\n"+descriptionEndMarker+"\n\nTail\n") {
+		t.Fatalf("expected user-authored content preserved:\n%s", client.updatedDescription)
+	}
+}
+
+func TestServicePost_SkipsDescriptionUpdateWhenBodyMatches(t *testing.T) {
+	body, err := output.RenderDescriptionBodyWithOptions(sampleReports(), "semantic", output.NoteMetadata{
+		DiffMode: "semantic",
+	}, output.NoteRenderOptions{
+		Mode:   cli.CommentModeFull,
+		Status: "changes detected",
+	})
+	if err != nil {
+		t.Fatalf("RenderDescriptionBody returned error: %v", err)
+	}
+	client := &fakeNoteClient{description: descriptionStartMarker + "\n" + strings.TrimSpace(body) + "\n" + descriptionEndMarker + "\n"}
+	service := &Service{
+		newClient: func(baseURL, token string, tokenKind gitlab.TokenKind) (NoteClient, error) { return client, nil },
+		resolve: func(opts cli.Options) (gitlab.Target, error) {
+			return gitlab.Target{ProjectID: "1", MergeRequestIID: "7", BaseURL: "https://gitlab.example/api/v4", Token: "token", TokenKind: gitlab.TokenKindPrivate}, nil
+		},
+	}
+
+	result, err := service.Post(context.Background(), cli.Options{DiffMode: cli.DiffModeSemantic}, sampleReports())
+	if err != nil {
+		t.Fatalf("Post returned error: %v", err)
+	}
+	if result.Action != "noop" {
+		t.Fatalf("expected noop action, got %q", result.Action)
+	}
+	if client.updatedDescription != "" {
+		t.Fatalf("expected no description update, got %q", client.updatedDescription)
 	}
 }
 
@@ -144,7 +226,7 @@ func TestServicePreflight_ReportsPermissionFailure(t *testing.T) {
 		},
 	}
 
-	status, err := service.Preflight(context.Background(), cli.Options{})
+	status, err := service.Preflight(context.Background(), cli.Options{PublishTarget: cli.PublishTargetNote})
 	if err == nil {
 		t.Fatal("expected preflight error")
 	}
@@ -181,12 +263,15 @@ func TestWriteStatusArtifact(t *testing.T) {
 }
 
 type fakeNoteClient struct {
-	notes       []gitlab.Note
-	createdBody string
-	updatedID   int
-	updatedBody string
-	listErr     error
-	probeErr    error
+	notes               []gitlab.Note
+	createdBody         string
+	updatedID           int
+	updatedBody         string
+	description         string
+	updatedDescription  string
+	listErr             error
+	probeErr            error
+	descriptionProbeErr error
 }
 
 func (f *fakeNoteClient) ListMergeRequestNotes(ctx context.Context, projectID, mrIID string) ([]gitlab.Note, error) {
@@ -209,6 +294,20 @@ func (f *fakeNoteClient) UpdateMergeRequestNote(ctx context.Context, projectID, 
 
 func (f *fakeNoteClient) ProbeCreateMergeRequestNoteAccess(ctx context.Context, projectID, mrIID string) error {
 	return f.probeErr
+}
+
+func (f *fakeNoteClient) GetMergeRequest(ctx context.Context, projectID, mrIID string) (gitlab.MergeRequest, error) {
+	return gitlab.MergeRequest{Description: f.description}, nil
+}
+
+func (f *fakeNoteClient) UpdateMergeRequestDescription(ctx context.Context, projectID, mrIID, description string) (gitlab.MergeRequest, error) {
+	f.updatedDescription = description
+	f.description = description
+	return gitlab.MergeRequest{Description: description}, nil
+}
+
+func (f *fakeNoteClient) ProbeUpdateMergeRequestDescriptionAccess(ctx context.Context, projectID, mrIID string) error {
+	return f.descriptionProbeErr
 }
 
 func sampleReports() []output.ClusterReport {

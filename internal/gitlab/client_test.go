@@ -2,6 +2,7 @@ package gitlab
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
@@ -57,6 +58,82 @@ func TestClientMergeRequestNotesLifecycle(t *testing.T) {
 	}
 	if seenAuth != "job-token" {
 		t.Fatalf("expected JOB-TOKEN header, got %q", seenAuth)
+	}
+}
+
+func TestClientMergeRequestDescriptionLifecycle(t *testing.T) {
+	var seenAuth string
+	var seenDescription string
+	client, err := New("https://gitlab.example/api/v4", "private-token", TokenKindPrivate)
+	if err != nil {
+		t.Fatalf("New returned error: %v", err)
+	}
+	client.httpClient = &http.Client{
+		Transport: roundTripFunc(func(r *http.Request) (*http.Response, error) {
+			seenAuth = r.Header.Get("PRIVATE-TOKEN")
+			switch {
+			case r.Method == http.MethodGet && r.URL.Path == "/api/v4/projects/1/merge_requests/7":
+				return jsonResponse(http.StatusOK, `{"description":"current"}`), nil
+			case r.Method == http.MethodPut && r.URL.Path == "/api/v4/projects/1/merge_requests/7":
+				var payload map[string]string
+				if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+					t.Fatalf("decode payload: %v", err)
+				}
+				seenDescription = payload["description"]
+				return jsonResponse(http.StatusOK, `{"description":"updated"}`), nil
+			default:
+				return textResponse(http.StatusNotFound, "not found"), nil
+			}
+		}),
+	}
+
+	mr, err := client.GetMergeRequest(context.Background(), "1", "7")
+	if err != nil {
+		t.Fatalf("GetMergeRequest returned error: %v", err)
+	}
+	if mr.Description != "current" {
+		t.Fatalf("unexpected description: %#v", mr)
+	}
+	updated, err := client.UpdateMergeRequestDescription(context.Background(), "1", "7", "next")
+	if err != nil {
+		t.Fatalf("UpdateMergeRequestDescription returned error: %v", err)
+	}
+	if updated.Description != "updated" {
+		t.Fatalf("unexpected updated description: %#v", updated)
+	}
+	if seenDescription != "next" {
+		t.Fatalf("expected description payload, got %q", seenDescription)
+	}
+	if seenAuth != "private-token" {
+		t.Fatalf("expected private token header, got %q", seenAuth)
+	}
+}
+
+func TestClientProbeUpdateMergeRequestDescriptionAccess(t *testing.T) {
+	var methods []string
+	client, err := New("https://gitlab.example/api/v4", "private-token", TokenKindPrivate)
+	if err != nil {
+		t.Fatalf("New returned error: %v", err)
+	}
+	client.httpClient = &http.Client{
+		Transport: roundTripFunc(func(r *http.Request) (*http.Response, error) {
+			methods = append(methods, r.Method)
+			switch r.Method {
+			case http.MethodGet:
+				return jsonResponse(http.StatusOK, `{"description":"current"}`), nil
+			case http.MethodPut:
+				return jsonResponse(http.StatusOK, `{"description":"current"}`), nil
+			default:
+				return textResponse(http.StatusNotFound, "not found"), nil
+			}
+		}),
+	}
+
+	if err := client.ProbeUpdateMergeRequestDescriptionAccess(context.Background(), "1", "7"); err != nil {
+		t.Fatalf("ProbeUpdateMergeRequestDescriptionAccess returned error: %v", err)
+	}
+	if strings.Join(methods, ",") != "GET,PUT" {
+		t.Fatalf("expected GET then PUT, got %v", methods)
 	}
 }
 

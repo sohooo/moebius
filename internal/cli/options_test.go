@@ -70,3 +70,23 @@ func TestParseGitLabToken(t *testing.T) {
 		t.Fatalf("expected gitlab token override, got %q", opts.GitLabToken)
 	}
 }
+
+func TestParsePublishTargetDefaultsToDescription(t *testing.T) {
+	opts, err := Parse([]string{"comment"}, &bytes.Buffer{})
+	if err != nil {
+		t.Fatalf("Parse returned error: %v", err)
+	}
+	if opts.PublishTarget != PublishTargetDescription {
+		t.Fatalf("expected description publish target, got %q", opts.PublishTarget)
+	}
+}
+
+func TestParsePublishTargetNote(t *testing.T) {
+	opts, err := Parse([]string{"comment", "--publish-target", "note"}, &bytes.Buffer{})
+	if err != nil {
+		t.Fatalf("Parse returned error: %v", err)
+	}
+	if opts.PublishTarget != PublishTargetNote {
+		t.Fatalf("expected note publish target, got %q", opts.PublishTarget)
+	}
+}

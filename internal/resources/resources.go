@@ -7,8 +7,8 @@ import (
 	"io"
 	"os"
 	"path/filepath"
-	"strconv"
 	"sort"
+	"strconv"
 	"strings"
 
 	"gopkg.in/yaml.v3"
@@ -37,11 +37,11 @@ type SplitOptions struct {
 }
 
 type DuplicateKeyError struct {
-	Document    int
-	Key         string
-	Line        int
+	Document     int
+	Key          string
+	Line         int
 	PreviousLine int
-	Path        string
+	Path         string
 }
 
 func (e DuplicateKeyError) Error() string {

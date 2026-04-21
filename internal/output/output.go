@@ -15,6 +15,13 @@ import (
 
 const StickyMarker = "<!-- mobius:mr-diff -->"
 
+type renderTarget int
+
+const (
+	renderTargetNote renderTarget = iota
+	renderTargetDescription
+)
+
 type ResourceReport struct {
 	State      string
 	Kind       string
@@ -58,6 +65,7 @@ type NoteRenderOptions struct {
 	Mode                 cli.CommentMode
 	IncludeArtifactsHint bool
 	Status               string
+	target               renderTarget
 }
 
 func PrintReports(w io.Writer, reports []ClusterReport, mode diff.Mode, format cli.OutputFormat) error {
@@ -99,6 +107,16 @@ func RenderCommentBody(reports []ClusterReport, mode diff.Mode, meta NoteMetadat
 }
 
 func RenderCommentBodyWithOptions(reports []ClusterReport, mode diff.Mode, meta NoteMetadata, opts NoteRenderOptions) (string, error) {
+	opts.target = renderTargetNote
+	return renderReportBodyWithOptions(reports, mode, meta, opts)
+}
+
+func RenderDescriptionBodyWithOptions(reports []ClusterReport, mode diff.Mode, meta NoteMetadata, opts NoteRenderOptions) (string, error) {
+	opts.target = renderTargetDescription
+	return renderReportBodyWithOptions(reports, mode, meta, opts)
+}
+
+func renderReportBodyWithOptions(reports []ClusterReport, mode diff.Mode, meta NoteMetadata, opts NoteRenderOptions) (string, error) {
 	var b strings.Builder
 	b.WriteString("# møbius Diff Report\n\n")
 	if opts.Status != "" {
@@ -130,15 +148,17 @@ func RenderCommentBodyWithOptions(reports []ClusterReport, mode diff.Mode, meta 
 
 	if len(reports) == 0 {
 		b.WriteString("_No effective changes._\n\n")
-		b.WriteString(StickyMarker)
+		if opts.target == renderTargetNote {
+			b.WriteString(StickyMarker)
+		}
 		return b.String(), nil
 	}
 
 	renderedReports := cloneReports(reports)
 	sortReportsForComment(renderedReports)
-	renderTopSummary(&b, renderedReports)
+	renderTopSummary(&b, renderedReports, opts.target)
 	b.WriteByte('\n')
-	renderCommentTOC(&b, renderedReports)
+	renderCommentTOC(&b, renderedReports, opts.target)
 	b.WriteByte('\n')
 
 	for i := range reports {
@@ -153,7 +173,9 @@ func RenderCommentBodyWithOptions(reports []ClusterReport, mode diff.Mode, meta 
 		b.WriteString("\n\n")
 	}
 	renderFooter(&b, opts)
-	b.WriteString(StickyMarker)
+	if opts.target == renderTargetNote {
+		b.WriteString(StickyMarker)
+	}
 	return b.String(), nil
 }
 
@@ -279,8 +301,12 @@ func renderClusterMarkdown(report ClusterReport, mode diff.Mode) (string, error)
 
 func renderClusterComment(report ClusterReport, mode diff.Mode, opts NoteRenderOptions) (string, error) {
 	var b strings.Builder
-	fmt.Fprintf(&b, "<a id=\"%s\"></a>\n", clusterAnchor(report.Name))
-	fmt.Fprintf(&b, "## Cluster `%s`\n\n", report.Name)
+	if opts.target == renderTargetNote {
+		fmt.Fprintf(&b, "<a id=\"%s\"></a>\n", clusterAnchor(report.Name))
+		fmt.Fprintf(&b, "## Cluster `%s`\n\n", report.Name)
+	} else {
+		fmt.Fprintf(&b, "## %s\n\n", descriptionClusterHeading(report.Name))
+	}
 	fmt.Fprintln(&b, "| Added | Removed | Changed |")
 	fmt.Fprintln(&b, "| ---: | ---: | ---: |")
 	fmt.Fprintf(&b, "| %d | %d | %d |\n\n", report.Added, report.Removed, report.Changed)
@@ -294,7 +320,11 @@ func renderClusterComment(report ClusterReport, mode diff.Mode, opts NoteRenderO
 
 	for _, chart := range report.Charts {
 		added, removed, changed := chartChangeCounts(chart)
-		fmt.Fprintf(&b, "<a id=\"%s\"></a>\n", chartAnchor(report.Name, chart.Name))
+		if opts.target == renderTargetNote {
+			fmt.Fprintf(&b, "<a id=\"%s\"></a>\n", chartAnchor(report.Name, chart.Name))
+		} else {
+			fmt.Fprintf(&b, "### %s\n\n", descriptionChartHeading(report.Name, chart.Name))
+		}
 		fmt.Fprintf(&b, "<details>\n<summary>%s</summary>\n\n", chartSummaryLine(chart, added, removed, changed))
 		fmt.Fprintf(&b, "- Summary: %s\n", chartSummaryBullet(chart, added, removed, changed))
 		if chart.RenderWarning != "" {
@@ -339,8 +369,13 @@ func renderClusterComment(report ClusterReport, mode diff.Mode, opts NoteRenderO
 			continue
 		}
 		for _, resource := range chart.Resources {
-			fmt.Fprintf(&b, "<a id=\"%s\"></a>\n", resourceAnchor(report.Name, resource.Kind, resource.Name))
-			fmt.Fprintf(&b, "#### Resource `%s · %s/%s` (%s, severity: %s%s)\n\n", report.Name, resource.Kind, resource.Name, resource.State, resource.Assessment.Level, validationSuffix(resource.Validation))
+			if opts.target == renderTargetNote {
+				fmt.Fprintf(&b, "<a id=\"%s\"></a>\n", resourceAnchor(report.Name, resource.Kind, resource.Name))
+				fmt.Fprintf(&b, "#### Resource `%s · %s/%s` (%s, severity: %s%s)\n\n", report.Name, resource.Kind, resource.Name, resource.State, resource.Assessment.Level, validationSuffix(resource.Validation))
+			} else {
+				fmt.Fprintf(&b, "#### %s\n\n", descriptionResourceHeading(report.Name, chart.Name, resource.Namespace, resource.Kind, resource.Name))
+				fmt.Fprintf(&b, "**Resource:** `%s · %s/%s` (%s, severity: %s%s)\n\n", report.Name, resource.Kind, resource.Name, resource.State, resource.Assessment.Level, validationSuffix(resource.Validation))
+			}
 			if detail := validationCoverageLine(resource.Validation); detail != "" {
 				fmt.Fprintf(&b, "- validation coverage: %s\n", detail)
 			}
@@ -479,7 +514,7 @@ type reviewHighlight struct {
 	priority   int
 }
 
-func renderTopSummary(b *strings.Builder, reports []ClusterReport) {
+func renderTopSummary(b *strings.Builder, reports []ClusterReport, target renderTarget) {
 	type counts struct{ added, removed, changed int }
 	totalClusters := len(reports)
 	totalCharts := 0
@@ -491,7 +526,7 @@ func renderTopSummary(b *strings.Builder, reports []ClusterReport) {
 	unvalidatedResources := 0
 	renderWarnings := 0
 	renderNotices := 0
-	highlights := collectReviewHighlights(reports, 5)
+	highlights := collectReviewHighlights(reports, 5, target)
 
 	for _, report := range reports {
 		totalCharts += len(report.Charts)
@@ -684,10 +719,14 @@ func chartSeverityCounts(chart ChartReport) map[severity.Level]int {
 	return counts
 }
 
-func collectReviewHighlights(reports []ClusterReport, limit int) []reviewHighlight {
+func collectReviewHighlights(reports []ClusterReport, limit int, target renderTarget) []reviewHighlight {
 	var items []reviewHighlight
 	for _, report := range reports {
 		for _, chart := range report.Charts {
+			chartLink := chartAnchor(report.Name, chart.Name)
+			if target == renderTargetDescription {
+				chartLink = descriptionAnchor(descriptionChartHeading(report.Name, chart.Name))
+			}
 			if versionChange := chartVersionChange(chart); versionChange != "" {
 				items = append(items, reviewHighlight{
 					validation: validate.StatusValid,
@@ -696,7 +735,7 @@ func collectReviewHighlights(reports []ClusterReport, limit int) []reviewHighlig
 					kind:       "Chart",
 					name:       chart.Name,
 					finding:    "version upgrade: " + versionChange,
-					anchor:     chartAnchor(report.Name, chart.Name),
+					anchor:     chartLink,
 					priority:   2,
 				})
 			}
@@ -708,7 +747,7 @@ func collectReviewHighlights(reports []ClusterReport, limit int) []reviewHighlig
 					kind:       "Chart",
 					name:       chart.Name,
 					finding:    "analysis partial: render warning skipped detailed diff",
-					anchor:     chartAnchor(report.Name, chart.Name),
+					anchor:     chartLink,
 					priority:   1,
 				})
 			}
@@ -720,12 +759,16 @@ func collectReviewHighlights(reports []ClusterReport, limit int) []reviewHighlig
 					kind:       "Chart",
 					name:       chart.Name,
 					finding:    fmt.Sprintf("analysis partial: duplicate YAML keys accepted with last-wins behavior (%d override(s))", len(chart.Warnings)),
-					anchor:     chartAnchor(report.Name, chart.Name),
+					anchor:     chartLink,
 					priority:   1,
 				})
 			}
 			for _, resource := range chart.Resources {
 				if finding := primaryResourceHighlight(resource); finding != "" {
+					resourceLink := resourceAnchor(report.Name, resource.Kind, resource.Name)
+					if target == renderTargetDescription {
+						resourceLink = descriptionAnchor(descriptionResourceHeading(report.Name, chart.Name, resource.Namespace, resource.Kind, resource.Name))
+					}
 					items = append(items, reviewHighlight{
 						validation: resource.Validation.Status,
 						level:      resource.Assessment.Level,
@@ -733,7 +776,7 @@ func collectReviewHighlights(reports []ClusterReport, limit int) []reviewHighlig
 						kind:       resource.Kind,
 						name:       resource.Name,
 						finding:    finding,
-						anchor:     resourceAnchor(report.Name, resource.Kind, resource.Name),
+						anchor:     resourceLink,
 						state:      resource.State,
 						priority:   resourceHighlightPriority(resource),
 					})
@@ -852,18 +895,26 @@ func renderFooter(b *strings.Builder, opts NoteRenderOptions) {
 	if opts.Mode == cli.CommentModeSummaryArtifacts {
 		fmt.Fprintln(b, "_Compact summary mode. Full details are available in pipeline artifacts._")
 	} else if opts.Mode == cli.CommentModeSummary {
-		fmt.Fprintln(b, "_Summary mode. Full resource diffs are omitted from this MR note._")
+		if opts.target == renderTargetDescription {
+			fmt.Fprintln(b, "_Summary mode. Full resource diffs are omitted from this MR description report._")
+		} else {
+			fmt.Fprintln(b, "_Summary mode. Full resource diffs are omitted from this MR note._")
+		}
 	} else {
 		fmt.Fprintln(b, "_Report compares merge-base and current MR state._")
 	}
 	fmt.Fprintln(b)
 }
 
-func renderCommentTOC(b *strings.Builder, reports []ClusterReport) {
+func renderCommentTOC(b *strings.Builder, reports []ClusterReport, target renderTarget) {
 	fmt.Fprintln(b, "**Navigation**")
 	fmt.Fprintln(b)
 	for _, report := range reports {
-		fmt.Fprintf(b, "- [%s](#%s) · added %d · removed %d · changed %d\n", report.Name, clusterAnchor(report.Name), report.Added, report.Removed, report.Changed)
+		anchor := clusterAnchor(report.Name)
+		if target == renderTargetDescription {
+			anchor = descriptionAnchor(descriptionClusterHeading(report.Name))
+		}
+		fmt.Fprintf(b, "- [%s](#%s) · added %d · removed %d · changed %d\n", report.Name, anchor, report.Added, report.Removed, report.Changed)
 	}
 }
 
@@ -946,6 +997,22 @@ func chartAnchor(cluster, chart string) string {
 
 func resourceAnchor(cluster, kind, name string) string {
 	return "resource-" + anchorSlug(cluster) + "-" + anchorSlug(kind) + "-" + anchorSlug(name)
+}
+
+func descriptionClusterHeading(cluster string) string {
+	return fmt.Sprintf("mobius cluster %s", cluster)
+}
+
+func descriptionChartHeading(cluster, chart string) string {
+	return fmt.Sprintf("mobius chart %s %s", cluster, chart)
+}
+
+func descriptionResourceHeading(cluster, chart, namespace, kind, name string) string {
+	return fmt.Sprintf("mobius resource %s %s %s %s %s", cluster, chart, emptyToNone(namespace), kind, name)
+}
+
+func descriptionAnchor(heading string) string {
+	return anchorSlug(heading)
 }
 
 func anchorSlug(parts ...string) string {

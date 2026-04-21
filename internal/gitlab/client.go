@@ -33,6 +33,10 @@ type Note struct {
 	Body string `json:"body"`
 }
 
+type MergeRequest struct {
+	Description string `json:"description"`
+}
+
 type APIError struct {
 	Method     string
 	Path       string
@@ -100,6 +104,34 @@ func (c *Client) UpdateMergeRequestNote(ctx context.Context, projectID, mrIID st
 		return Note{}, err
 	}
 	return note, nil
+}
+
+func (c *Client) GetMergeRequest(ctx context.Context, projectID, mrIID string) (MergeRequest, error) {
+	var mr MergeRequest
+	path := fmt.Sprintf("/projects/%s/merge_requests/%s", url.PathEscape(projectID), url.PathEscape(mrIID))
+	if err := c.doJSON(ctx, http.MethodGet, path, nil, &mr, 0); err != nil {
+		return MergeRequest{}, err
+	}
+	return mr, nil
+}
+
+func (c *Client) UpdateMergeRequestDescription(ctx context.Context, projectID, mrIID, description string) (MergeRequest, error) {
+	var mr MergeRequest
+	payload := map[string]string{"description": description}
+	path := fmt.Sprintf("/projects/%s/merge_requests/%s", url.PathEscape(projectID), url.PathEscape(mrIID))
+	if err := c.doJSON(ctx, http.MethodPut, path, payload, &mr, 0); err != nil {
+		return MergeRequest{}, err
+	}
+	return mr, nil
+}
+
+func (c *Client) ProbeUpdateMergeRequestDescriptionAccess(ctx context.Context, projectID, mrIID string) error {
+	mr, err := c.GetMergeRequest(ctx, projectID, mrIID)
+	if err != nil {
+		return err
+	}
+	_, err = c.UpdateMergeRequestDescription(ctx, projectID, mrIID, mr.Description)
+	return err
 }
 
 func (c *Client) ProbeCreateMergeRequestNoteAccess(ctx context.Context, projectID, mrIID string) error {

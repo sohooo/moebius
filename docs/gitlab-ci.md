@@ -6,7 +6,7 @@ Its main CI job is:
 - render the effective cluster state at the merge-base
 - render the effective cluster state at the MR commit
 - compare both
-- publish the result as a sticky merge request note or as job output
+- publish the result as a managed merge request description block or as job output
 
 ## Canonical MR Pipeline
 
@@ -15,7 +15,7 @@ Recommended pipeline job:
 ```yaml
 mobius-diff:
   stage: test
-  image: ghcr.io/sohooo/moebius:v0.1.10
+  image: ghcr.io/sohooo/moebius:v0.2.0
   tags:
     - k8s
   variables:
@@ -36,7 +36,7 @@ mobius-diff:
 Why these settings matter:
 - `GIT_DEPTH: "0"` gives `møbius` enough history for merge-base calculation
 - the explicit `git fetch` makes the target branch ref available locally in detached MR jobs
-- `GITLAB_TOKEN` provides note-writing permission for `møbius comment`
+- `GITLAB_TOKEN` provides permission for `møbius comment` to update the MR description
 - `.mobius-out/` is the canonical debug surface
 
 ## Required Environment
@@ -52,6 +52,7 @@ Recommended token model:
 - treat `CI_JOB_TOKEN` as fallback only
 
 `CI_JOB_TOKEN` often cannot create or update merge request notes, even when it can read the MR.
+By default, `møbius comment` publishes a managed report block at the bottom of the MR description. Use `--publish-target note` to keep the legacy sticky-note behavior.
 
 ## Comment Preflight
 
@@ -60,8 +61,8 @@ Before posting, `møbius comment` validates:
 - merge request IID
 - GitLab API base URL
 - resolved token source and kind
-- ability to reach the MR notes API
-- ability to create or update MR notes
+- ability to reach the GitLab MR API
+- ability to update the MR description, or notes when `--publish-target note` is used
 
 If preflight fails, `møbius comment`:
 - still builds the diff report
@@ -91,7 +92,7 @@ For a fast local preflight before touching CI, run:
 mobius doctor
 ```
 
-If GitLab-related environment variables or tokens are already present, `mobius doctor` also performs a live GitLab MR note readiness check. Without GitLab context, it stays local and reports that the GitLab checks were skipped.
+If GitLab-related environment variables or tokens are already present, `mobius doctor` also performs a live GitLab MR publish-readiness check. Without GitLab context, it stays local and reports that the GitLab checks were skipped.
 
 ## Common Variants
 
@@ -119,7 +120,7 @@ script:
       --output-dir .mobius-out
 ```
 
-If you only want job output and no MR note:
+If you only want job output and no MR description update:
 
 ```yaml
 script:

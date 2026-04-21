@@ -21,7 +21,7 @@ go install github.com/sohooo/moebius/cmd/mobius@latest
 Install a pinned version:
 
 ```bash
-go install github.com/sohooo/moebius/cmd/mobius@v0.1.10
+go install github.com/sohooo/moebius/cmd/mobius@v0.2.0
 ```
 
 This requires a local Go toolchain.
@@ -62,14 +62,14 @@ Run a fast local preflight:
 mobius doctor
 ```
 
-If GitLab CI variables or GitLab tokens are present in your environment, `mobius doctor` also runs live GitLab comment-readiness checks.
+If GitLab CI variables or GitLab tokens are present in your environment, `mobius doctor` also runs live GitLab publish-readiness checks.
 
 Add `møbius comment` to a GitLab MR pipeline:
 
 ```yaml
 mobius-diff:
   stage: test
-  image: ghcr.io/sohooo/moebius:v0.1.10
+  image: ghcr.io/sohooo/moebius:v0.2.0
   variables:
     GIT_DEPTH: "0"
     GITLAB_TOKEN: "${MOBIUS_GITLAB_TOKEN}"
@@ -86,7 +86,7 @@ mobius-diff:
 ```
 
 This is the recommended production path:
-- use a dedicated GitLab API token with note-writing permission
+- use a dedicated GitLab API token that can update merge request descriptions
 - fetch the MR target branch explicitly
 - keep `.mobius-out/` as the canonical debug surface
 
@@ -104,7 +104,7 @@ Base ref behavior:
 
 Sample outputs:
 - Markdown report: [docs/sample-report.md](docs/sample-report.md)
-- GitLab MR note: [docs/sample-comment.md](docs/sample-comment.md)
+- GitLab MR report: [docs/sample-comment.md](docs/sample-comment.md)
 
 ## What `møbius` Does
 
@@ -116,7 +116,7 @@ For each selected cluster, `møbius`:
 4. splits the rendered output into individual Kubernetes resources
 5. compares baseline and current resources semantically and as raw text
 6. validates current rendered resources offline using structural checks, embedded schemas, rendered CRD schemas, and semantic validators
-7. renders the result as terminal output, markdown, or a GitLab MR note
+7. renders the result as terminal output, markdown, or a GitLab MR description report
 
 ```mermaid
 flowchart TD
