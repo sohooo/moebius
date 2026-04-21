@@ -200,8 +200,14 @@ func TestRenderDescriptionBody_UsesMobiusHeadingsAndLinks(t *testing.T) {
 	if !strings.Contains(body, "| **Severity** | 🔴 critical 1 · 🟠 high 1 |") {
 		t.Fatalf("expected severity summary badges:\n%s", body)
 	}
-	if !strings.Contains(body, "- 🔴 `ClusterRole/hello-world` **critical** · RBAC rules changed at `rules`") {
-		t.Fatalf("expected notable changes with severity badge and bold severity:\n%s", body)
+	if !strings.Contains(body, "[`ClusterRole/hello-world`](#user-content-mobius-resource-kube-bravo-hello-world--clusterrole-hello-world)") {
+		t.Fatalf("expected empty namespace resource link to preserve GitLab heading slug:\n%s", body)
+	}
+	if strings.Contains(body, "#user-content-mobius-resource-kube-bravo-hello-world-none-clusterrole-hello-world") {
+		t.Fatalf("empty namespace resource links must not inject none:\n%s", body)
+	}
+	if !strings.Contains(body, "- 🔴 [`ClusterRole/hello-world`](#user-content-mobius-resource-kube-bravo-hello-world--clusterrole-hello-world) **critical** · RBAC rules changed at `rules`") {
+		t.Fatalf("expected linked notable changes with severity badge and bold severity:\n%s", body)
 	}
 }
 
@@ -281,6 +287,50 @@ func TestRenderDescriptionBody_ResourceLinksIncludeChartAndNamespace(t *testing.
 	secondAnchor := "#user-content-mobius-resource-kube-bravo-other-chart-other-deployment-hello-world"
 	if !strings.Contains(body, firstAnchor) || !strings.Contains(body, secondAnchor) {
 		t.Fatalf("expected resource anchors to include chart and namespace:\n%s", body)
+	}
+}
+
+func TestRenderCommentBody_FoldsClusterDetailsAfterNavigation(t *testing.T) {
+	body, err := RenderCommentBody([]ClusterReport{sampleClusterReport()}, diff.ModeSemantic, NoteMetadata{CommitSHA: "deadbeef"})
+	if err != nil {
+		t.Fatalf("RenderCommentBody returned error: %v", err)
+	}
+
+	highlights := strings.Index(body, "**Highlights**")
+	navigation := strings.Index(body, "**Navigation**")
+	fold := strings.Index(body, "<summary>Cluster Details · 1 cluster · 1 chart · 2 resources</summary>")
+	clusterHeading := strings.Index(body, "## Cluster `kube-bravo`")
+	if highlights == -1 || navigation == -1 || fold == -1 || clusterHeading == -1 {
+		t.Fatalf("expected highlights, navigation, cluster details fold, and cluster heading:\n%s", body)
+	}
+	if !(highlights < navigation && navigation < fold && fold < clusterHeading) {
+		t.Fatalf("expected highlights and navigation outside the cluster details fold:\n%s", body)
+	}
+}
+
+func TestRenderCommentBody_GroupsHighlightsByClusterAndLimitsGlobalTable(t *testing.T) {
+	first := sampleClusterReport()
+	second := sampleClusterReport()
+	second.Name = "kube-charlie"
+	third := sampleClusterReport()
+	third.Name = "kube-delta"
+
+	body, err := RenderCommentBody([]ClusterReport{first, second, third}, diff.ModeSemantic, NoteMetadata{CommitSHA: "deadbeef"})
+	if err != nil {
+		t.Fatalf("RenderCommentBody returned error: %v", err)
+	}
+
+	global := sectionBetween(t, body, "**Highlights**", "**Highlights by cluster**")
+	if got := strings.Count(global, "](#"); got != globalHighlightLimit {
+		t.Fatalf("expected global highlights to be capped at %d links, got %d:\n%s", globalHighlightLimit, got, global)
+	}
+	if !strings.Contains(body, "_Additional highlights are grouped by cluster below._") {
+		t.Fatalf("expected additional highlights note:\n%s", body)
+	}
+	if !strings.Contains(body, "<summary>kube-bravo · 🔴 1 · 🟠 1 · 2 highlights</summary>") ||
+		!strings.Contains(body, "<summary>kube-charlie · 🔴 1 · 🟠 1 · 2 highlights</summary>") ||
+		!strings.Contains(body, "<summary>kube-delta · 🔴 1 · 🟠 1 · 2 highlights</summary>") {
+		t.Fatalf("expected grouped highlight summaries for each cluster:\n%s", body)
 	}
 }
 
@@ -432,4 +482,18 @@ func readGolden(t *testing.T, name string) string {
 		t.Fatalf("read golden %s: %v", name, err)
 	}
 	return string(data)
+}
+
+func sectionBetween(t *testing.T, body, start, end string) string {
+	t.Helper()
+	startIndex := strings.Index(body, start)
+	if startIndex == -1 {
+		t.Fatalf("missing section start %q:\n%s", start, body)
+	}
+	sectionStart := startIndex + len(start)
+	endIndex := strings.Index(body[sectionStart:], end)
+	if endIndex == -1 {
+		t.Fatalf("missing section end %q after %q:\n%s", end, start, body)
+	}
+	return body[sectionStart : sectionStart+endIndex]
 }

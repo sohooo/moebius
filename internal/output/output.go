@@ -15,6 +15,8 @@ import (
 
 const StickyMarker = "<!-- mobius:mr-diff -->"
 
+const globalHighlightLimit = 5
+
 type renderTarget int
 
 const (
@@ -117,6 +119,9 @@ func RenderDescriptionBodyWithOptions(reports []ClusterReport, mode diff.Mode, m
 }
 
 func renderReportBodyWithOptions(reports []ClusterReport, mode diff.Mode, meta NoteMetadata, opts NoteRenderOptions) (string, error) {
+	if opts.Mode == "" {
+		opts.Mode = cli.CommentModeFull
+	}
 	var b strings.Builder
 	b.WriteString("# møbius Diff Report\n\n")
 	if opts.Status != "" {
@@ -161,16 +166,8 @@ func renderReportBodyWithOptions(reports []ClusterReport, mode diff.Mode, meta N
 	renderCommentTOC(&b, renderedReports, opts.target)
 	b.WriteByte('\n')
 
-	for i := range reports {
-		chunk, err := renderClusterComment(renderedReports[i], mode, opts)
-		if err != nil {
-			return "", err
-		}
-		if i > 0 {
-			b.WriteByte('\n')
-		}
-		b.WriteString(strings.TrimRight(chunk, "\n"))
-		b.WriteString("\n\n")
+	if err := renderClusterDetails(&b, renderedReports, mode, opts); err != nil {
+		return "", err
 	}
 	renderFooter(&b, opts)
 	if opts.target == renderTargetNote {
@@ -343,7 +340,8 @@ func renderClusterComment(report ClusterReport, mode diff.Mode, opts NoteRenderO
 			fmt.Fprintln(&b)
 		}
 		renderChartSignalTable(&b, chart, added, removed, changed)
-		notables := collectNotableResourceChanges(chart, 5)
+		linkNotables := opts.Mode == cli.CommentModeFull
+		notables := collectNotableResourceChanges(report.Name, chart, 5, opts.target, linkNotables)
 		if len(notables) > 0 {
 			fmt.Fprintln(&b, "**Notable changes**")
 			for _, notable := range notables {
@@ -410,6 +408,37 @@ func renderClusterComment(report ClusterReport, mode diff.Mode, opts NoteRenderO
 		fmt.Fprintln(&b)
 	}
 	return strings.TrimRight(b.String(), "\n"), nil
+}
+
+func renderClusterDetails(b *strings.Builder, reports []ClusterReport, mode diff.Mode, opts NoteRenderOptions) error {
+	fmt.Fprintf(b, "<details>\n<summary>%s</summary>\n\n", clusterDetailsSummary(reports))
+	for i := range reports {
+		chunk, err := renderClusterComment(reports[i], mode, opts)
+		if err != nil {
+			return err
+		}
+		if i > 0 {
+			b.WriteByte('\n')
+		}
+		b.WriteString(strings.TrimRight(chunk, "\n"))
+		b.WriteString("\n\n")
+	}
+	fmt.Fprintln(b, "</details>")
+	fmt.Fprintln(b)
+	return nil
+}
+
+func clusterDetailsSummary(reports []ClusterReport) string {
+	charts := 0
+	resources := 0
+	for _, report := range reports {
+		charts += len(report.Charts)
+		for _, chart := range report.Charts {
+			added, removed, changed := chartChangeCounts(chart)
+			resources += added + removed + changed
+		}
+	}
+	return fmt.Sprintf("Cluster Details · %s · %s · %s", countLabel(len(reports), "cluster"), countLabel(charts, "chart"), countLabel(resources, "resource"))
 }
 
 func chartChangeCounts(chart ChartReport) (added, removed, changed int) {
@@ -518,7 +547,7 @@ func renderTopSummary(b *strings.Builder, reports []ClusterReport, target render
 	unvalidatedResources := 0
 	renderWarnings := 0
 	renderNotices := 0
-	highlights := collectReviewHighlights(reports, 5, target)
+	highlights := collectReviewHighlights(reports, 0, target)
 
 	for _, report := range reports {
 		totalCharts += len(report.Charts)
@@ -584,15 +613,85 @@ func renderTopSummary(b *strings.Builder, reports []ClusterReport, target render
 		}
 	}
 	if len(highlights) > 0 {
-		fmt.Fprintln(b, "**Highlights**")
-		fmt.Fprintln(b)
-		fmt.Fprintln(b, "| Severity | Cluster | Resource | Finding |")
-		fmt.Fprintln(b, "| --- | --- | --- | --- |")
-		for _, highlight := range highlights {
-			fmt.Fprintf(b, "| %s | `%s` | [%s](#%s) | %s |\n", severityBadge(highlight.level), highlight.cluster, fmt.Sprintf("`%s/%s`", highlight.kind, highlight.name), highlight.anchor, escapeTable(highlight.finding))
-		}
+		renderGlobalHighlights(b, highlights)
+		renderHighlightsByCluster(b, reports, highlights)
+	}
+}
+
+func renderGlobalHighlights(b *strings.Builder, highlights []reviewHighlight) {
+	limited := limitReviewHighlights(highlights, globalHighlightLimit)
+	fmt.Fprintln(b, "**Highlights**")
+	fmt.Fprintln(b)
+	fmt.Fprintln(b, "| Severity | Cluster | Resource | Finding |")
+	fmt.Fprintln(b, "| --- | --- | --- | --- |")
+	for _, highlight := range limited {
+		fmt.Fprintf(b, "| %s | `%s` | [%s](#%s) | %s |\n", severityBadge(highlight.level), highlight.cluster, highlightResourceLabel(highlight), highlight.anchor, escapeTable(highlight.finding))
+	}
+	fmt.Fprintln(b)
+	if len(highlights) > len(limited) {
+		fmt.Fprintln(b, "_Additional highlights are grouped by cluster below._")
 		fmt.Fprintln(b)
 	}
+}
+
+func renderHighlightsByCluster(b *strings.Builder, reports []ClusterReport, highlights []reviewHighlight) {
+	grouped := map[string][]reviewHighlight{}
+	for _, highlight := range highlights {
+		grouped[highlight.cluster] = append(grouped[highlight.cluster], highlight)
+	}
+	if len(grouped) == 0 {
+		return
+	}
+	fmt.Fprintln(b, "**Highlights by cluster**")
+	fmt.Fprintln(b)
+	for _, report := range reports {
+		items := grouped[report.Name]
+		if len(items) == 0 {
+			continue
+		}
+		fmt.Fprintf(b, "<details>\n<summary>%s</summary>\n\n", highlightClusterSummary(report.Name, items))
+		fmt.Fprintln(b, "| Severity | Resource | Finding |")
+		fmt.Fprintln(b, "| --- | --- | --- |")
+		for _, highlight := range items {
+			fmt.Fprintf(b, "| %s | [%s](#%s) | %s |\n", severityBadge(highlight.level), highlightResourceLabel(highlight), highlight.anchor, escapeTable(highlight.finding))
+		}
+		fmt.Fprintln(b)
+		fmt.Fprintln(b, "</details>")
+		fmt.Fprintln(b)
+	}
+}
+
+func highlightClusterSummary(cluster string, highlights []reviewHighlight) string {
+	counts := map[severity.Level]int{}
+	for _, highlight := range highlights {
+		counts[highlight.level]++
+	}
+	parts := []string{cluster}
+	for _, level := range []severity.Level{severity.LevelCritical, severity.LevelHigh, severity.LevelMedium, severity.LevelLow, severity.LevelInfo} {
+		if counts[level] > 0 {
+			parts = append(parts, fmt.Sprintf("%s %d", severityIcon(level), counts[level]))
+		}
+	}
+	parts = append(parts, countLabel(len(highlights), "highlight"))
+	return strings.Join(parts, " · ")
+}
+
+func highlightResourceLabel(highlight reviewHighlight) string {
+	return fmt.Sprintf("`%s/%s`", highlight.kind, highlight.name)
+}
+
+func limitReviewHighlights(highlights []reviewHighlight, limit int) []reviewHighlight {
+	if limit <= 0 || len(highlights) <= limit {
+		return highlights
+	}
+	return highlights[:limit]
+}
+
+func countLabel(n int, singular string) string {
+	if n == 1 {
+		return fmt.Sprintf("%d %s", n, singular)
+	}
+	return fmt.Sprintf("%d %ss", n, singular)
 }
 
 func chartKinds(chart ChartReport) []string {
@@ -623,14 +722,18 @@ func onlyValueTweaks(chart ChartReport) bool {
 	return true
 }
 
-func collectNotableResourceChanges(chart ChartReport, limit int) []string {
+func collectNotableResourceChanges(cluster string, chart ChartReport, limit int, target renderTarget, linkResources bool) []string {
 	if limit <= 0 || chart.RenderWarning != "" || len(chart.Warnings) > 0 {
 		return nil
 	}
 	var out []string
 	for _, resource := range chart.Resources {
 		if line := primaryResourceHighlight(resource); line != "" {
-			out = append(out, fmt.Sprintf("%s `%s/%s` **%s** · %s", severityIcon(resource.Assessment.Level), resource.Kind, resource.Name, resource.Assessment.Level, line))
+			label := fmt.Sprintf("`%s/%s`", resource.Kind, resource.Name)
+			if linkResources {
+				label = fmt.Sprintf("[%s](#%s)", label, resourceLinkAnchor(cluster, chart.Name, resource, target))
+			}
+			out = append(out, fmt.Sprintf("%s %s **%s** · %s", severityIcon(resource.Assessment.Level), label, resource.Assessment.Level, line))
 			if len(out) >= limit {
 				return out
 			}
@@ -800,14 +903,11 @@ func collectReviewHighlights(reports []ClusterReport, limit int, target renderTa
 		}
 		return items[i].finding < items[j].finding
 	})
-	out := make([]reviewHighlight, 0, limit)
-	for _, item := range items {
-		out = append(out, item)
-		if len(out) >= limit {
-			break
-		}
+	items = dedupeHighlights(items)
+	if limit <= 0 || len(items) <= limit {
+		return items
 	}
-	return dedupeHighlights(out)
+	return items[:limit]
 }
 
 func formatSeveritySummary(counts map[severity.Level]int) string {
@@ -1189,6 +1289,13 @@ func resourceAnchor(cluster, kind, name string) string {
 	return "resource-" + anchorSlug(cluster) + "-" + anchorSlug(kind) + "-" + anchorSlug(name)
 }
 
+func resourceLinkAnchor(cluster, chart string, resource ResourceReport, target renderTarget) string {
+	if target == renderTargetDescription {
+		return descriptionAnchor(descriptionResourceHeading(cluster, chart, resource.Namespace, resource.Kind, resource.Name))
+	}
+	return resourceAnchor(cluster, resource.Kind, resource.Name)
+}
+
 func descriptionClusterHeading(cluster string) string {
 	return fmt.Sprintf("mobius cluster %s", cluster)
 }
@@ -1198,11 +1305,11 @@ func descriptionChartHeading(cluster, chart string) string {
 }
 
 func descriptionResourceHeading(cluster, chart, namespace, kind, name string) string {
-	return fmt.Sprintf("mobius resource %s %s %s %s %s", cluster, chart, emptyToNone(namespace), kind, name)
+	return fmt.Sprintf("mobius resource %s %s %s %s %s", cluster, chart, namespace, kind, name)
 }
 
 func descriptionAnchor(heading string) string {
-	return "user-content-" + anchorSlug(heading)
+	return "user-content-" + gitlabHeadingSlug(heading)
 }
 
 func anchorSlug(parts ...string) string {
@@ -1219,6 +1326,19 @@ func anchorSlug(parts ...string) string {
 			b.WriteByte('-')
 			lastDash = true
 		}
+	}
+	return strings.Trim(b.String(), "-")
+}
+
+func gitlabHeadingSlug(heading string) string {
+	raw := strings.ToLower(heading)
+	var b strings.Builder
+	for _, r := range raw {
+		if (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') {
+			b.WriteRune(r)
+			continue
+		}
+		b.WriteByte('-')
 	}
 	return strings.Trim(b.String(), "-")
 }
