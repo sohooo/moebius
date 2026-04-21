@@ -158,6 +158,33 @@ func TestClientCreateMergeRequestNoteHandlesLargeSuccessResponse(t *testing.T) {
 	}
 }
 
+func TestClientListMergeRequestNotesHandlesLargeResponse(t *testing.T) {
+	client, err := New("https://gitlab.example/api/v4", "private-token", TokenKindPrivate)
+	if err != nil {
+		t.Fatalf("New returned error: %v", err)
+	}
+	largeBody := strings.Repeat("x", 12000)
+	client.httpClient = &http.Client{
+		Transport: roundTripFunc(func(r *http.Request) (*http.Response, error) {
+			if r.Method != http.MethodGet {
+				t.Fatalf("expected GET, got %s", r.Method)
+			}
+			return jsonResponse(http.StatusOK, `[{"id":6,"body":"`+largeBody+`"}]`), nil
+		}),
+	}
+
+	notes, err := client.ListMergeRequestNotes(context.Background(), "1", "7")
+	if err != nil {
+		t.Fatalf("ListMergeRequestNotes returned error: %v", err)
+	}
+	if len(notes) != 1 || notes[0].ID != 6 {
+		t.Fatalf("expected one note with id 6, got %#v", notes)
+	}
+	if got := strconv.Itoa(len(notes[0].Body)); got != "12000" {
+		t.Fatalf("expected body length 12000, got %s", got)
+	}
+}
+
 type roundTripFunc func(*http.Request) (*http.Response, error)
 
 func (f roundTripFunc) RoundTrip(r *http.Request) (*http.Response, error) {

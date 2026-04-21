@@ -76,7 +76,7 @@ func New(baseURL, token string, tokenKind TokenKind) (*Client, error) {
 func (c *Client) ListMergeRequestNotes(ctx context.Context, projectID, mrIID string) ([]Note, error) {
 	var notes []Note
 	path := fmt.Sprintf("/projects/%s/merge_requests/%s/notes", url.PathEscape(projectID), url.PathEscape(mrIID))
-	if err := c.doJSON(ctx, http.MethodGet, path, nil, &notes, 8192); err != nil {
+	if err := c.doJSON(ctx, http.MethodGet, path, nil, &notes, 0); err != nil {
 		return nil, err
 	}
 	return notes, nil
