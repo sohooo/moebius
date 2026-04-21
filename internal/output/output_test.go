@@ -188,11 +188,76 @@ func TestRenderDescriptionBody_UsesMobiusHeadingsAndLinks(t *testing.T) {
 	if !strings.Contains(body, "| **Summary** | 2 resources affected · highest severity 🔴 critical |") {
 		t.Fatalf("expected bold summary label with severity badge:\n%s", body)
 	}
+	if !strings.Contains(body, "**Change fingerprint:** +0 · -0 · ~2 · 🔴 critical 1 · 🟠 high 1 · schema gaps 1") {
+		t.Fatalf("expected top-level change fingerprint:\n%s", body)
+	}
+	if !strings.Contains(body, "| **Change mix** | +0 · -0 · ~2 |") {
+		t.Fatalf("expected chart change mix:\n%s", body)
+	}
+	if !strings.Contains(body, "| **Surface** | security · workload |") {
+		t.Fatalf("expected chart surface summary:\n%s", body)
+	}
 	if !strings.Contains(body, "| **Severity** | 🔴 critical 1 · 🟠 high 1 |") {
 		t.Fatalf("expected severity summary badges:\n%s", body)
 	}
 	if !strings.Contains(body, "- 🔴 `ClusterRole/hello-world` **critical** · RBAC rules changed at `rules`") {
 		t.Fatalf("expected notable changes with severity badge and bold severity:\n%s", body)
+	}
+}
+
+func TestRenderCommentBody_ClassifiesPlatformSurfaces(t *testing.T) {
+	report := ClusterReport{
+		Name:    "kube-bravo",
+		Changed: 4,
+		Charts: []ChartReport{{
+			Name:      "platform",
+			Namespace: "platform",
+			Resources: []ResourceReport{
+				{
+					State: "changed",
+					Kind:  "Database",
+					Name:  "app",
+					Assessment: severity.Assessment{
+						Level: severity.LevelMedium,
+						Findings: []severity.Finding{{
+							Level:    severity.LevelMedium,
+							Category: "platform",
+							Reason:   "CloudNativePG Database changed",
+						}},
+					},
+					Validation: validate.Result{Status: validate.StatusValid, Coverage: validate.CoverageValidated},
+				},
+				{
+					State:      "changed",
+					Kind:       "ApplicationSet",
+					Name:       "apps",
+					Assessment: severity.Assessment{Level: severity.LevelInfo},
+					Validation: validate.Result{Status: validate.StatusValid, Coverage: validate.CoverageValidated},
+				},
+				{
+					State:      "changed",
+					Kind:       "VaultAuth",
+					Name:       "auth",
+					Assessment: severity.Assessment{Level: severity.LevelCritical},
+					Validation: validate.Result{Status: validate.StatusValid, Coverage: validate.CoverageValidated},
+				},
+				{
+					State:      "changed",
+					Kind:       "Widget",
+					Name:       "custom",
+					Assessment: severity.Assessment{Level: severity.LevelLow},
+					Validation: validate.Result{Status: validate.StatusValid, Coverage: validate.CoverageValidated},
+				},
+			},
+		}},
+	}
+
+	body, err := RenderCommentBody([]ClusterReport{report}, diff.ModeSemantic, NoteMetadata{CommitSHA: "deadbeef"})
+	if err != nil {
+		t.Fatalf("RenderCommentBody returned error: %v", err)
+	}
+	if !strings.Contains(body, "| **Surface** | security · database · ci/cd · custom |") {
+		t.Fatalf("expected ordered platform surface taxonomy:\n%s", body)
 	}
 }
 
