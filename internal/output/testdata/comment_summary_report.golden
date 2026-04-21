@@ -45,14 +45,17 @@ Charts with changes: 1
 <details>
 <summary>Chart `hello-world` · namespace `demo` · severity `critical` · added 0 · removed 0 · changed 2</summary>
 
-- Summary: 2 resources affected · highest severity critical
-- Kinds affected: ClusterRole, Deployment
-- Scope: value-level tweaks only
-- Severity summary: critical 1, high 1
-- Validation: 0 errors, 0 warnings, 1 unvalidated
-- Notable changes:
-  - `ClusterRole/hello-world` [critical]: RBAC rules changed at `rules`
-  - `Deployment/hello-world` [high]: replicas changed 2 -> 3
+| Signal | Details |
+| --- | --- |
+| **Summary** | 2 resources affected · highest severity 🔴 critical |
+| **Kinds** | `ClusterRole`, `Deployment` |
+| **Scope** | value-level tweaks only |
+| **Severity** | 🔴 critical 1 · 🟠 high 1 |
+| **Validation** | 0 errors · 0 warnings · 1 unvalidated |
+
+**Notable changes**
+- 🔴 `ClusterRole/hello-world` **critical** · RBAC rules changed at `rules`
+- 🟠 `Deployment/hello-world` **high** · replicas changed 2 -> 3
 
 </details>
 

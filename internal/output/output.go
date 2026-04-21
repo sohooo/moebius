@@ -326,9 +326,9 @@ func renderClusterComment(report ClusterReport, mode diff.Mode, opts NoteRenderO
 			fmt.Fprintf(&b, "### %s\n\n", descriptionChartHeading(report.Name, chart.Name))
 		}
 		fmt.Fprintf(&b, "<details>\n<summary>%s</summary>\n\n", chartSummaryLine(chart, added, removed, changed))
-		fmt.Fprintf(&b, "- Summary: %s\n", chartSummaryBullet(chart, added, removed, changed))
 		if chart.RenderWarning != "" {
 			fmt.Fprintf(&b, "> [!important]\n> Render warning: %s\n\n", chart.RenderWarning)
+			renderChartSignalTable(&b, chart, added, removed, changed)
 			fmt.Fprintln(&b, "</details>")
 			fmt.Fprintln(&b)
 			continue
@@ -342,20 +342,12 @@ func renderClusterComment(report ClusterReport, mode diff.Mode, opts NoteRenderO
 		if len(chart.Warnings) > 0 {
 			fmt.Fprintln(&b)
 		}
-		fmt.Fprintf(&b, "- Kinds affected: %s\n", strings.Join(chartKinds(chart), ", "))
-		if onlyValueTweaks(chart) {
-			fmt.Fprintln(&b, "- Scope: value-level tweaks only")
-		}
-		fmt.Fprintf(&b, "- Severity summary: %s\n", formatSeveritySummary(chartSeverityCounts(chart)))
-		errors, warnings, unvalidated := chartValidationCounts(chart)
-		if errors > 0 || warnings > 0 || unvalidated > 0 {
-			fmt.Fprintf(&b, "- Validation: %d errors, %d warnings, %d unvalidated\n", errors, warnings, unvalidated)
-		}
-		notables := collectNotableChanges(chart)
+		renderChartSignalTable(&b, chart, added, removed, changed)
+		notables := collectNotableResourceChanges(chart, 5)
 		if len(notables) > 0 {
-			fmt.Fprintln(&b, "- Notable changes:")
+			fmt.Fprintln(&b, "**Notable changes**")
 			for _, notable := range notables {
-				fmt.Fprintf(&b, "  - %s\n", notable)
+				fmt.Fprintf(&b, "- %s\n", notable)
 			}
 		}
 		if opts.Mode == cli.CommentModeSummaryArtifacts || opts.IncludeArtifactsHint {
@@ -628,18 +620,15 @@ func onlyValueTweaks(chart ChartReport) bool {
 	return true
 }
 
-func collectNotableChanges(chart ChartReport) []string {
-	if chart.RenderWarning != "" {
-		return []string{"analysis partial: render warning skipped detailed diff"}
-	}
-	if len(chart.Warnings) > 0 {
-		return []string{fmt.Sprintf("analysis partial: duplicate YAML keys accepted with last-wins behavior (%d override(s))", len(chart.Warnings))}
+func collectNotableResourceChanges(chart ChartReport, limit int) []string {
+	if limit <= 0 || chart.RenderWarning != "" || len(chart.Warnings) > 0 {
+		return nil
 	}
 	var out []string
 	for _, resource := range chart.Resources {
 		if line := primaryResourceHighlight(resource); line != "" {
-			out = append(out, fmt.Sprintf("`%s/%s` [%s]: %s", resource.Kind, resource.Name, resource.Assessment.Level, line))
-			if len(out) >= 5 {
+			out = append(out, fmt.Sprintf("%s `%s/%s` **%s** · %s", severityIcon(resource.Assessment.Level), resource.Kind, resource.Name, resource.Assessment.Level, line))
+			if len(out) >= limit {
 				return out
 			}
 		}
@@ -935,6 +924,26 @@ func chartVersionChange(chart ChartReport) string {
 	return fmt.Sprintf("%s → %s", chart.BaselineTargetRevision, chart.CurrentTargetRevision)
 }
 
+func renderChartSignalTable(b *strings.Builder, chart ChartReport, added, removed, changed int) {
+	fmt.Fprintln(b, "| Signal | Details |")
+	fmt.Fprintln(b, "| --- | --- |")
+	fmt.Fprintf(b, "| **Summary** | %s |\n", escapeTable(chartSummaryDetails(chart, added, removed, changed)))
+	if kinds := formatChartKinds(chart); kinds != "" {
+		fmt.Fprintf(b, "| **Kinds** | %s |\n", escapeTable(kinds))
+	}
+	if onlyValueTweaks(chart) {
+		fmt.Fprintln(b, "| **Scope** | value-level tweaks only |")
+	}
+	if summary := formatSeveritySummaryWithBadges(chartSeverityCounts(chart)); summary != "" {
+		fmt.Fprintf(b, "| **Severity** | %s |\n", escapeTable(summary))
+	}
+	errors, warnings, unvalidated := chartValidationCounts(chart)
+	if errors > 0 || warnings > 0 || unvalidated > 0 {
+		fmt.Fprintf(b, "| **Validation** | %d errors · %d warnings · %d unvalidated |\n", errors, warnings, unvalidated)
+	}
+	fmt.Fprintln(b)
+}
+
 func chartSummaryLine(chart ChartReport, added, removed, changed int) string {
 	parts := []string{fmt.Sprintf("Chart `%s`", chart.Name)}
 	if versionChange := chartVersionChange(chart); versionChange != "" {
@@ -950,7 +959,7 @@ func chartSummaryLine(chart ChartReport, added, removed, changed int) string {
 	return strings.Join(parts, " · ")
 }
 
-func chartSummaryBullet(chart ChartReport, added, removed, changed int) string {
+func chartSummaryDetails(chart ChartReport, added, removed, changed int) string {
 	var parts []string
 	if versionChange := chartVersionChange(chart); versionChange != "" {
 		parts = append(parts, "version "+versionChange)
@@ -965,11 +974,45 @@ func chartSummaryBullet(chart ChartReport, added, removed, changed int) string {
 			parts = append(parts, fmt.Sprintf("%d resources affected", total))
 		}
 	}
-	parts = append(parts, "highest severity "+string(chartSeverity(chart)))
+	parts = append(parts, "highest severity "+severityBadge(chartSeverity(chart)))
 	if chart.RenderWarning != "" || len(chart.Warnings) > 0 {
 		parts = append(parts, "analysis partial")
 	}
 	return strings.Join(parts, " · ")
+}
+
+func formatChartKinds(chart ChartReport) string {
+	kinds := chartKinds(chart)
+	if len(kinds) == 0 {
+		return ""
+	}
+	out := make([]string, 0, len(kinds))
+	for _, kind := range kinds {
+		out = append(out, fmt.Sprintf("`%s`", kind))
+	}
+	return strings.Join(out, ", ")
+}
+
+func formatSeveritySummaryWithBadges(counts map[severity.Level]int) string {
+	order := []severity.Level{
+		severity.LevelCritical,
+		severity.LevelHigh,
+		severity.LevelMedium,
+		severity.LevelLow,
+		severity.LevelInfo,
+	}
+	var parts []string
+	for _, level := range order {
+		if counts[level] == 0 {
+			continue
+		}
+		parts = append(parts, fmt.Sprintf("%s %d", severityBadge(level), counts[level]))
+	}
+	return strings.Join(parts, " · ")
+}
+
+func severityIcon(level severity.Level) string {
+	return strings.Fields(severityBadge(level))[0]
 }
 
 func severityBadge(level severity.Level) string {

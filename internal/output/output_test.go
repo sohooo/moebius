@@ -110,8 +110,8 @@ func TestRenderCommentBody_IncludesRenderWarnings(t *testing.T) {
 	if !strings.Contains(body, "> [!important]") {
 		t.Fatalf("expected important alert in body, got %s", body)
 	}
-	if !strings.Contains(body, "- Summary: render skipped · highest severity info · analysis partial") {
-		t.Fatalf("expected chart summary bullet in body, got %s", body)
+	if !strings.Contains(body, "| **Summary** | render skipped · highest severity 🔵 info · analysis partial |") {
+		t.Fatalf("expected chart summary table in body, got %s", body)
 	}
 }
 
@@ -134,8 +134,8 @@ func TestRenderCommentBody_LinksHighlightsAndShowsVersionChanges(t *testing.T) {
 	if !strings.Contains(body, "version 10.3.0 → 12.0.2") {
 		t.Fatalf("expected chart version change in body, got %s", body)
 	}
-	if !strings.Contains(body, "- Summary: version 10.3.0 → 12.0.2 · 2 resources affected · highest severity critical") {
-		t.Fatalf("expected chart summary bullet with version change in body, got %s", body)
+	if !strings.Contains(body, "| **Summary** | version 10.3.0 → 12.0.2 · 2 resources affected · highest severity 🔴 critical |") {
+		t.Fatalf("expected chart summary table with version change in body, got %s", body)
 	}
 }
 
@@ -184,6 +184,15 @@ func TestRenderDescriptionBody_UsesMobiusHeadingsAndLinks(t *testing.T) {
 	}
 	if strings.Contains(body, "#møbius") || strings.Contains(body, "## møbius") || strings.Contains(body, "### møbius") || strings.Contains(body, "#### møbius") {
 		t.Fatalf("actionable links and heading targets must use ASCII mobius:\n%s", body)
+	}
+	if !strings.Contains(body, "| **Summary** | 2 resources affected · highest severity 🔴 critical |") {
+		t.Fatalf("expected bold summary label with severity badge:\n%s", body)
+	}
+	if !strings.Contains(body, "| **Severity** | 🔴 critical 1 · 🟠 high 1 |") {
+		t.Fatalf("expected severity summary badges:\n%s", body)
+	}
+	if !strings.Contains(body, "- 🔴 `ClusterRole/hello-world` **critical** · RBAC rules changed at `rules`") {
+		t.Fatalf("expected notable changes with severity badge and bold severity:\n%s", body)
 	}
 }
 
@@ -265,8 +274,11 @@ func TestRenderCommentBody_IncludesPermissivePartialAnalysisWarning(t *testing.T
 	if !strings.Contains(body, "duplicate YAML keys accepted with last-wins behavior: 2 override(s).") {
 		t.Fatalf("expected last-wins summary in body, got %s", body)
 	}
-	if !strings.Contains(body, "- Summary: 1 resource affected · highest severity high · analysis partial") {
-		t.Fatalf("expected chart summary bullet with partial analysis in body, got %s", body)
+	if !strings.Contains(body, "> [!warning]\n> duplicate key \"prometheus.io/scrape\" accepted with last-wins behavior") {
+		t.Fatalf("expected duplicate-key warning above table, got %s", body)
+	}
+	if !strings.Contains(body, "| **Summary** | 1 resource affected · highest severity 🟠 high · analysis partial |") {
+		t.Fatalf("expected chart summary table with partial analysis in body, got %s", body)
 	}
 }
 
