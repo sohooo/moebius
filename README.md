@@ -21,7 +21,7 @@ go install github.com/sohooo/moebius/cmd/mobius@latest
 Install a pinned version:
 
 ```bash
-go install github.com/sohooo/moebius/cmd/mobius@v0.1.9
+go install github.com/sohooo/moebius/cmd/mobius@v0.1.10
 ```
 
 This requires a local Go toolchain.
@@ -69,7 +69,7 @@ Add `møbius comment` to a GitLab MR pipeline:
 ```yaml
 mobius-diff:
   stage: test
-  image: ghcr.io/sohooo/moebius:v0.1.9
+  image: ghcr.io/sohooo/moebius:v0.1.10
   variables:
     GIT_DEPTH: "0"
     GITLAB_TOKEN: "${MOBIUS_GITLAB_TOKEN}"
