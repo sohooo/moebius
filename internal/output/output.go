@@ -1012,7 +1012,7 @@ func descriptionResourceHeading(cluster, chart, namespace, kind, name string) st
 }
 
 func descriptionAnchor(heading string) string {
-	return anchorSlug(heading)
+	return "user-content-" + anchorSlug(heading)
 }
 
 func anchorSlug(parts ...string) string {

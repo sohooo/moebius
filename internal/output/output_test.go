@@ -167,10 +167,10 @@ func TestRenderDescriptionBody_UsesMobiusHeadingsAndLinks(t *testing.T) {
 	if strings.Contains(body, `<a id=`) {
 		t.Fatalf("description body must not contain custom anchor tags:\n%s", body)
 	}
-	if !strings.Contains(body, "[kube-bravo](#mobius-cluster-kube-bravo)") {
+	if !strings.Contains(body, "[kube-bravo](#user-content-mobius-cluster-kube-bravo)") {
 		t.Fatalf("expected mobius cluster navigation link:\n%s", body)
 	}
-	if !strings.Contains(body, "[`Deployment/hello-world`](#mobius-resource-kube-bravo-hello-world-demo-deployment-hello-world)") {
+	if !strings.Contains(body, "[`Deployment/hello-world`](#user-content-mobius-resource-kube-bravo-hello-world-demo-deployment-hello-world)") {
 		t.Fatalf("expected mobius resource highlight link:\n%s", body)
 	}
 	if !strings.Contains(body, "## mobius cluster kube-bravo") {
@@ -203,8 +203,8 @@ func TestRenderDescriptionBody_ResourceLinksIncludeChartAndNamespace(t *testing.
 	if err != nil {
 		t.Fatalf("RenderDescriptionBodyWithOptions returned error: %v", err)
 	}
-	firstAnchor := "#mobius-resource-kube-bravo-hello-world-demo-deployment-hello-world"
-	secondAnchor := "#mobius-resource-kube-bravo-other-chart-other-deployment-hello-world"
+	firstAnchor := "#user-content-mobius-resource-kube-bravo-hello-world-demo-deployment-hello-world"
+	secondAnchor := "#user-content-mobius-resource-kube-bravo-other-chart-other-deployment-hello-world"
 	if !strings.Contains(body, firstAnchor) || !strings.Contains(body, secondAnchor) {
 		t.Fatalf("expected resource anchors to include chart and namespace:\n%s", body)
 	}
