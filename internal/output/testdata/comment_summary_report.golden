@@ -58,7 +58,7 @@ Charts with changes: 1
 | **Severity** | 🔴 critical 1 · 🟠 high 1 |
 | **Validation** | 0 errors · 0 warnings · 1 unvalidated |
 
-**Notable changes**
+**Changes**
 - 🔴 `ClusterRole/hello-world` **critical** · RBAC rules changed at `rules`
 - 🟠 `Deployment/hello-world` **high** · replicas changed 2 -> 3
 

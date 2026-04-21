@@ -341,12 +341,12 @@ func renderClusterComment(report ClusterReport, mode diff.Mode, opts NoteRenderO
 			fmt.Fprintln(&b)
 		}
 		renderChartSignalTable(&b, chart, added, removed, changed)
-		linkNotables := opts.Mode == cli.CommentModeFull
-		notables := collectNotableResourceChanges(report.Name, chart, 5, opts.target, linkNotables)
-		if len(notables) > 0 {
-			fmt.Fprintln(&b, "**Notable changes**")
-			for _, notable := range notables {
-				fmt.Fprintf(&b, "- %s\n", notable)
+		linkChanges := opts.Mode == cli.CommentModeFull
+		changes := collectChartResourceChanges(report.Name, chart, opts.target, linkChanges)
+		if len(changes) > 0 {
+			fmt.Fprintln(&b, "**Changes**")
+			for _, change := range changes {
+				fmt.Fprintf(&b, "- %s\n", change)
 			}
 		}
 		if opts.Mode == cli.CommentModeSummaryArtifacts || opts.IncludeArtifactsHint {
@@ -365,8 +365,8 @@ func renderClusterComment(report ClusterReport, mode diff.Mode, opts NoteRenderO
 				fmt.Fprintf(&b, "#### Resource `%s · %s/%s` (%s, severity: %s%s)\n\n", report.Name, resource.Kind, resource.Name, resource.State, resource.Assessment.Level, validationSuffix(resource.Validation))
 			} else {
 				fmt.Fprintf(&b, "#### %s\n\n", descriptionResourceHeading(report.Name, chart.Name, resource.Namespace, resource.Kind, resource.Name))
-				fmt.Fprintf(&b, "**Resource:** `%s · %s/%s` (%s, severity: %s%s)\n\n", report.Name, resource.Kind, resource.Name, resource.State, resource.Assessment.Level, validationSuffix(resource.Validation))
 			}
+			fmt.Fprintf(&b, "- %s · severity %s%s · [up](#%s)\n", resource.State, severityBadge(resource.Assessment.Level), validationSuffix(resource.Validation), chartLinkAnchor(report.Name, chart.Name, opts.target))
 			if detail := validationCoverageLine(resource.Validation); detail != "" {
 				fmt.Fprintf(&b, "- validation coverage: %s\n", detail)
 			}
@@ -688,22 +688,21 @@ func onlyValueTweaks(chart ChartReport) bool {
 	return true
 }
 
-func collectNotableResourceChanges(cluster string, chart ChartReport, limit int, target renderTarget, linkResources bool) []string {
-	if limit <= 0 || chart.RenderWarning != "" || len(chart.Warnings) > 0 {
+func collectChartResourceChanges(cluster string, chart ChartReport, target renderTarget, linkResources bool) []string {
+	if chart.RenderWarning != "" {
 		return nil
 	}
 	var out []string
 	for _, resource := range chart.Resources {
-		if line := primaryResourceHighlight(resource); line != "" {
-			label := fmt.Sprintf("`%s/%s`", resource.Kind, resource.Name)
-			if linkResources {
-				label = fmt.Sprintf("[%s](#%s)", label, resourceLinkAnchor(cluster, chart.Name, resource, target))
-			}
-			out = append(out, fmt.Sprintf("%s %s **%s** · %s", severityIcon(resource.Assessment.Level), label, resource.Assessment.Level, line))
-			if len(out) >= limit {
-				return out
-			}
+		line := primaryResourceHighlight(resource)
+		if line == "" {
+			line = resource.State
 		}
+		label := fmt.Sprintf("`%s/%s`", resource.Kind, resource.Name)
+		if linkResources {
+			label = fmt.Sprintf("[%s](#%s)", label, resourceLinkAnchor(cluster, chart.Name, resource, target))
+		}
+		out = append(out, fmt.Sprintf("%s %s **%s** · %s", severityIcon(resource.Assessment.Level), label, resource.Assessment.Level, line))
 	}
 	return out
 }
@@ -1259,6 +1258,13 @@ func chartAnchor(cluster, chart string) string {
 	return "chart-" + anchorSlug(cluster) + "-" + anchorSlug(chart)
 }
 
+func chartLinkAnchor(cluster, chart string, target renderTarget) string {
+	if target == renderTargetDescription {
+		return descriptionAnchor(descriptionChartHeading(cluster, chart))
+	}
+	return chartAnchor(cluster, chart)
+}
+
 func resourceAnchor(cluster, kind, name string) string {
 	return "resource-" + anchorSlug(cluster) + "-" + anchorSlug(kind) + "-" + anchorSlug(name)
 }
@@ -1279,7 +1285,7 @@ func descriptionChartHeading(cluster, chart string) string {
 }
 
 func descriptionResourceHeading(cluster, chart, namespace, kind, name string) string {
-	return fmt.Sprintf("mobius resource %s %s %s %s %s", cluster, chart, namespace, kind, name)
+	return fmt.Sprintf("mobius resource `%s` · %s · %s/%s %s", cluster, chart, namespace, kind, name)
 }
 
 func descriptionAnchor(heading string) string {
@@ -1308,6 +1314,9 @@ func gitlabHeadingSlug(heading string) string {
 	raw := strings.ToLower(heading)
 	var b strings.Builder
 	for _, r := range raw {
+		if r == '.' || r == '`' || r == '·' || r == '/' {
+			continue
+		}
 		if (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') {
 			b.WriteRune(r)
 			continue

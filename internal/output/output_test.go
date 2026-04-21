@@ -176,7 +176,7 @@ func TestRenderDescriptionBody_UsesMobiusHeadingsAndLinks(t *testing.T) {
 	if !strings.Contains(body, "[kube-bravo](#user-content-mobius-cluster-kube-bravo)") {
 		t.Fatalf("expected mobius cluster navigation link:\n%s", body)
 	}
-	if !strings.Contains(body, "[`Deployment/hello-world`](#user-content-mobius-resource-kube-bravo-hello-world-demo-deployment-hello-world)") {
+	if !strings.Contains(body, "[`Deployment/hello-world`](#user-content-mobius-resource-kube-bravo--hello-world--demodeployment-hello-world)") {
 		t.Fatalf("expected mobius resource highlight link:\n%s", body)
 	}
 	if !strings.Contains(body, "## mobius cluster kube-bravo") {
@@ -185,8 +185,17 @@ func TestRenderDescriptionBody_UsesMobiusHeadingsAndLinks(t *testing.T) {
 	if !strings.Contains(body, "### mobius chart kube-bravo hello-world") {
 		t.Fatalf("expected mobius chart heading:\n%s", body)
 	}
-	if !strings.Contains(body, "#### mobius resource kube-bravo hello-world demo Deployment hello-world") {
+	if !strings.Contains(body, "#### mobius resource `kube-bravo` · hello-world · demo/Deployment hello-world") {
 		t.Fatalf("expected mobius resource heading:\n%s", body)
+	}
+	if strings.Contains(body, "**Resource:**") {
+		t.Fatalf("description body must not contain redundant resource line:\n%s", body)
+	}
+	if !strings.Contains(body, "- changed · severity 🟠 high") {
+		t.Fatalf("expected resource metadata bullet with severity badge:\n%s", body)
+	}
+	if !strings.Contains(body, "- changed · severity 🟠 high · [up](#user-content-mobius-chart-kube-bravo-hello-world)") {
+		t.Fatalf("expected resource metadata bullet with chart backlink:\n%s", body)
 	}
 	if strings.Contains(body, "#møbius") || strings.Contains(body, "## møbius") || strings.Contains(body, "### møbius") || strings.Contains(body, "#### møbius") {
 		t.Fatalf("actionable links and heading targets must use ASCII mobius:\n%s", body)
@@ -206,14 +215,17 @@ func TestRenderDescriptionBody_UsesMobiusHeadingsAndLinks(t *testing.T) {
 	if !strings.Contains(body, "| **Severity** | 🔴 critical 1 · 🟠 high 1 |") {
 		t.Fatalf("expected severity summary badges:\n%s", body)
 	}
-	if !strings.Contains(body, "[`ClusterRole/hello-world`](#user-content-mobius-resource-kube-bravo-hello-world--clusterrole-hello-world)") {
+	if !strings.Contains(body, "[`ClusterRole/hello-world`](#user-content-mobius-resource-kube-bravo--hello-world--clusterrole-hello-world)") {
 		t.Fatalf("expected empty namespace resource link to preserve GitLab heading slug:\n%s", body)
 	}
 	if strings.Contains(body, "#user-content-mobius-resource-kube-bravo-hello-world-none-clusterrole-hello-world") {
 		t.Fatalf("empty namespace resource links must not inject none:\n%s", body)
 	}
-	if !strings.Contains(body, "- 🔴 [`ClusterRole/hello-world`](#user-content-mobius-resource-kube-bravo-hello-world--clusterrole-hello-world) **critical** · RBAC rules changed at `rules`") {
-		t.Fatalf("expected linked notable changes with severity badge and bold severity:\n%s", body)
+	if !strings.Contains(body, "**Changes**") {
+		t.Fatalf("expected chart changes section:\n%s", body)
+	}
+	if !strings.Contains(body, "- 🔴 [`ClusterRole/hello-world`](#user-content-mobius-resource-kube-bravo--hello-world--clusterrole-hello-world) **critical** · RBAC rules changed at `rules`") {
+		t.Fatalf("expected linked chart changes with severity badge and bold severity:\n%s", body)
 	}
 }
 
@@ -289,10 +301,85 @@ func TestRenderDescriptionBody_ResourceLinksIncludeChartAndNamespace(t *testing.
 	if err != nil {
 		t.Fatalf("RenderDescriptionBodyWithOptions returned error: %v", err)
 	}
-	firstAnchor := "#user-content-mobius-resource-kube-bravo-hello-world-demo-deployment-hello-world"
-	secondAnchor := "#user-content-mobius-resource-kube-bravo-other-chart-other-deployment-hello-world"
+	firstAnchor := "#user-content-mobius-resource-kube-bravo--hello-world--demodeployment-hello-world"
+	secondAnchor := "#user-content-mobius-resource-kube-bravo--other-chart--otherdeployment-hello-world"
 	if !strings.Contains(body, firstAnchor) || !strings.Contains(body, secondAnchor) {
 		t.Fatalf("expected resource anchors to include chart and namespace:\n%s", body)
+	}
+}
+
+func TestRenderDescriptionBody_IgnoresDotsInGitLabResourceAnchors(t *testing.T) {
+	report := ClusterReport{
+		Name:    "kube-bravo",
+		Changed: 1,
+		Charts: []ChartReport{{
+			Name:      "spawn",
+			Namespace: "default",
+			Resources: []ResourceReport{{
+				State: "changed",
+				Kind:  "CustomResourceDefinition",
+				Name:  "clustermetadata.core.example.com",
+				Assessment: severity.Assessment{
+					Level: severity.LevelCritical,
+					Findings: []severity.Finding{{
+						Level:  severity.LevelCritical,
+						Reason: "CustomResourceDefinition changed",
+					}},
+				},
+				Validation: validate.Result{Status: validate.StatusValid, Coverage: validate.CoverageValidated},
+			}},
+		}},
+	}
+
+	body, err := RenderDescriptionBodyWithOptions([]ClusterReport{report}, diff.ModeSemantic, NoteMetadata{}, NoteRenderOptions{
+		Mode:   cli.CommentModeFull,
+		Status: "changes detected",
+	})
+	if err != nil {
+		t.Fatalf("RenderDescriptionBodyWithOptions returned error: %v", err)
+	}
+	want := "#user-content-mobius-resource-kube-bravo--spawn--customresourcedefinition-clustermetadatacoreexamplecom"
+	if !strings.Contains(body, want) {
+		t.Fatalf("expected dotted CRD anchor to ignore dots:\n%s", body)
+	}
+	if strings.Contains(body, "clustermetadata-core-example-com") {
+		t.Fatalf("dotted CRD anchor must not convert dots to dashes:\n%s", body)
+	}
+	if !strings.Contains(body, "#### mobius resource `kube-bravo` · spawn · /CustomResourceDefinition clustermetadata.core.example.com") {
+		t.Fatalf("expected readable CRD resource heading:\n%s", body)
+	}
+}
+
+func TestRenderCommentBody_ChartChangesListsAllResources(t *testing.T) {
+	report := ClusterReport{
+		Name:    "kube-bravo",
+		Changed: 6,
+		Charts: []ChartReport{{
+			Name:      "many",
+			Namespace: "demo",
+			Resources: []ResourceReport{
+				{State: "changed", Kind: "ConfigMap", Name: "one", Assessment: severity.Assessment{Level: severity.LevelLow}, Validation: validate.Result{Status: validate.StatusValid}},
+				{State: "changed", Kind: "ConfigMap", Name: "two", Assessment: severity.Assessment{Level: severity.LevelLow}, Validation: validate.Result{Status: validate.StatusValid}},
+				{State: "changed", Kind: "ConfigMap", Name: "three", Assessment: severity.Assessment{Level: severity.LevelLow}, Validation: validate.Result{Status: validate.StatusValid}},
+				{State: "changed", Kind: "ConfigMap", Name: "four", Assessment: severity.Assessment{Level: severity.LevelLow}, Validation: validate.Result{Status: validate.StatusValid}},
+				{State: "changed", Kind: "ConfigMap", Name: "five", Assessment: severity.Assessment{Level: severity.LevelLow}, Validation: validate.Result{Status: validate.StatusValid}},
+				{State: "changed", Kind: "ConfigMap", Name: "six", Assessment: severity.Assessment{Level: severity.LevelLow}, Validation: validate.Result{Status: validate.StatusValid}},
+			},
+		}},
+	}
+
+	body, err := RenderCommentBody([]ClusterReport{report}, diff.ModeSemantic, NoteMetadata{CommitSHA: "deadbeef"})
+	if err != nil {
+		t.Fatalf("RenderCommentBody returned error: %v", err)
+	}
+	if !strings.Contains(body, "**Changes**") {
+		t.Fatalf("expected chart changes section:\n%s", body)
+	}
+	if got := strings.Count(body, "🟢 [`ConfigMap/"); got != 6 {
+		t.Fatalf("expected all 6 resources in chart changes list, got %d:\n%s", got, body)
+	}
+	if !strings.Contains(body, "- changed · severity 🟢 low · [up](#chart-kube-bravo-many)") {
+		t.Fatalf("expected note-mode chart backlink:\n%s", body)
 	}
 }
 
