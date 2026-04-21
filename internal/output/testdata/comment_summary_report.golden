@@ -13,22 +13,6 @@ Generated: `2026-04-05T12:00:00Z`
 | ---: | ---: | ---: | ---: | ---: | ---: |
 | 1 | 1 | 2 | 0 | 0 | 2 |
 
-**Severity:** critical 1, high 1
-
-**Change fingerprint:** +0 · -0 · ~2 · 🔴 critical 1 · 🟠 high 1 · schema gaps 1
-
-> [!caution]
-> Critical findings detected: 1
-
-**Validation:** 0 errors, 0 warnings, 1 unvalidated
-
-**Highlights**
-
-| Severity | Cluster | Resource | Finding |
-| --- | --- | --- | --- |
-| 🔴 critical | `kube-bravo` | [`ClusterRole/hello-world`](#resource-kube-bravo-clusterrole-hello-world) | RBAC rules changed at `rules` |
-| 🟠 high | `kube-bravo` | [`Deployment/hello-world`](#resource-kube-bravo-deployment-hello-world) | replicas changed 2 -> 3 |
-
 **Highlights by cluster**
 
 <details>
@@ -41,6 +25,8 @@ Generated: `2026-04-05T12:00:00Z`
 
 </details>
 
+
+---
 
 **Navigation**
 
@@ -82,6 +68,6 @@ Charts with changes: 1
 
 ---
 
-_Summary mode. Full resource diffs are omitted from this MR note._
+_Summary mode. Full resource diffs are omitted from this MR note · validation: 0 errors, 0 warnings, 1 unvalidated._
 
 <!-- mobius:mr-diff -->

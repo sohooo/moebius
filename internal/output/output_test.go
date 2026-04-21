@@ -89,8 +89,11 @@ func TestRenderCommentBody_IncludesRenderWarnings(t *testing.T) {
 	if !strings.Contains(body, "warnings detected") {
 		t.Fatalf("expected warnings status in body, got %s", body)
 	}
-	if !strings.Contains(body, "| Severity | Cluster | Resource | Finding |") {
-		t.Fatalf("expected highlights table in body, got %s", body)
+	if strings.Contains(body, "| Severity | Cluster | Resource | Finding |") {
+		t.Fatalf("expected no global highlights table in body, got %s", body)
+	}
+	if !strings.Contains(body, "| Severity | Resource | Finding |") {
+		t.Fatalf("expected grouped highlights table in body, got %s", body)
 	}
 	if !strings.Contains(body, "analysis partial: render warning skipped detailed diff") {
 		t.Fatalf("expected render warning highlight in body, got %s", body)
@@ -112,6 +115,9 @@ func TestRenderCommentBody_IncludesRenderWarnings(t *testing.T) {
 	}
 	if !strings.Contains(body, "| **Summary** | render skipped · highest severity 🔵 info · analysis partial |") {
 		t.Fatalf("expected chart summary table in body, got %s", body)
+	}
+	if !strings.Contains(body, "_Report compares merge-base and current MR state · validation: clean._") {
+		t.Fatalf("expected clean validation metadata in footer, got %s", body)
 	}
 }
 
@@ -188,8 +194,8 @@ func TestRenderDescriptionBody_UsesMobiusHeadingsAndLinks(t *testing.T) {
 	if !strings.Contains(body, "| **Summary** | 2 resources affected · highest severity 🔴 critical |") {
 		t.Fatalf("expected bold summary label with severity badge:\n%s", body)
 	}
-	if !strings.Contains(body, "**Change fingerprint:** +0 · -0 · ~2 · 🔴 critical 1 · 🟠 high 1 · schema gaps 1") {
-		t.Fatalf("expected top-level change fingerprint:\n%s", body)
+	if strings.Contains(body, "**Severity:**") || strings.Contains(body, "**Change fingerprint:**") || strings.Contains(body, "**Validation:**") || strings.Contains(body, "> [!caution]") {
+		t.Fatalf("expected compact top-level summary without duplicate severity/fingerprint/validation/caution text:\n%s", body)
 	}
 	if !strings.Contains(body, "| **Change mix** | +0 · -0 · ~2 |") {
 		t.Fatalf("expected chart change mix:\n%s", body)
@@ -296,7 +302,7 @@ func TestRenderCommentBody_FoldsClusterDetailsAfterNavigation(t *testing.T) {
 		t.Fatalf("RenderCommentBody returned error: %v", err)
 	}
 
-	highlights := strings.Index(body, "**Highlights**")
+	highlights := strings.Index(body, "**Highlights by cluster**")
 	navigation := strings.Index(body, "**Navigation**")
 	fold := strings.Index(body, "<summary>Cluster Details · 1 cluster · 1 chart · 2 resources</summary>")
 	clusterHeading := strings.Index(body, "## Cluster `kube-bravo`")
@@ -308,7 +314,7 @@ func TestRenderCommentBody_FoldsClusterDetailsAfterNavigation(t *testing.T) {
 	}
 }
 
-func TestRenderCommentBody_GroupsHighlightsByClusterAndLimitsGlobalTable(t *testing.T) {
+func TestRenderCommentBody_GroupsHighlightsByClusterWithoutGlobalTable(t *testing.T) {
 	first := sampleClusterReport()
 	second := sampleClusterReport()
 	second.Name = "kube-charlie"
@@ -320,12 +326,11 @@ func TestRenderCommentBody_GroupsHighlightsByClusterAndLimitsGlobalTable(t *test
 		t.Fatalf("RenderCommentBody returned error: %v", err)
 	}
 
-	global := sectionBetween(t, body, "**Highlights**", "**Highlights by cluster**")
-	if got := strings.Count(global, "](#"); got != globalHighlightLimit {
-		t.Fatalf("expected global highlights to be capped at %d links, got %d:\n%s", globalHighlightLimit, got, global)
+	if strings.Contains(body, "**Highlights**\n\n| Severity | Cluster | Resource | Finding |") {
+		t.Fatalf("expected no global highlights table:\n%s", body)
 	}
-	if !strings.Contains(body, "_Additional highlights are grouped by cluster below._") {
-		t.Fatalf("expected additional highlights note:\n%s", body)
+	if strings.Contains(body, "_Additional highlights are grouped by cluster below._") {
+		t.Fatalf("expected no grouped highlights note:\n%s", body)
 	}
 	if !strings.Contains(body, "<summary>kube-bravo · 🔴 1 · 🟠 1 · 2 highlights</summary>") ||
 		!strings.Contains(body, "<summary>kube-charlie · 🔴 1 · 🟠 1 · 2 highlights</summary>") ||
@@ -482,18 +487,4 @@ func readGolden(t *testing.T, name string) string {
 		t.Fatalf("read golden %s: %v", name, err)
 	}
 	return string(data)
-}
-
-func sectionBetween(t *testing.T, body, start, end string) string {
-	t.Helper()
-	startIndex := strings.Index(body, start)
-	if startIndex == -1 {
-		t.Fatalf("missing section start %q:\n%s", start, body)
-	}
-	sectionStart := startIndex + len(start)
-	endIndex := strings.Index(body[sectionStart:], end)
-	if endIndex == -1 {
-		t.Fatalf("missing section end %q after %q:\n%s", end, start, body)
-	}
-	return body[sectionStart : sectionStart+endIndex]
 }
