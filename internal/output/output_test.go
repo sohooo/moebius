@@ -104,11 +104,11 @@ func TestRenderCommentBody_IncludesRenderWarnings(t *testing.T) {
 	if !strings.Contains(body, "Analysis is partial.") {
 		t.Fatalf("expected partial analysis summary in body, got %s", body)
 	}
-	if !strings.Contains(body, "1 release(s) skipped due to render warnings.") {
-		t.Fatalf("expected skipped release summary in body, got %s", body)
+	if !strings.Contains(body, "1 release(s) skipped due to other render warnings.") {
+		t.Fatalf("expected generic skipped release summary in body, got %s", body)
 	}
-	if !strings.Contains(body, "Render warnings:** 1 skipped release(s)") {
-		t.Fatalf("expected render warning summary in body, got %s", body)
+	if !strings.Contains(body, "Other render warnings:** 1 skipped release(s)") {
+		t.Fatalf("expected generic render warning summary in body, got %s", body)
 	}
 	if !strings.Contains(body, "> [!important]") {
 		t.Fatalf("expected important alert in body, got %s", body)
@@ -118,6 +118,42 @@ func TestRenderCommentBody_IncludesRenderWarnings(t *testing.T) {
 	}
 	if !strings.Contains(body, "_Report compares merge-base and current MR state · validation: clean._") {
 		t.Fatalf("expected clean validation metadata in footer, got %s", body)
+	}
+}
+
+func TestRenderCommentBody_DistinguishesMissingChartVersions(t *testing.T) {
+	report := ClusterReport{
+		Name: "kube-bravo",
+		Charts: []ChartReport{
+			{
+				Name:          "argocd",
+				Namespace:     "argocd",
+				RenderWarning: `cluster "kube-bravo" release "argocd" chart "oci://internal.oci.repo/helm-int/argo-cd" requested chart version "1.2.3" is unavailable: manifest unknown`,
+			},
+			{
+				Name:          "broken",
+				Namespace:     "default",
+				RenderWarning: `cluster "kube-bravo" release "broken" chart "oci://internal.oci.repo/helm-int/broken" produced invalid current rendered YAML`,
+			},
+		},
+	}
+
+	body, err := RenderCommentBody([]ClusterReport{report}, diff.ModeSemantic, NoteMetadata{CommitSHA: "deadbeef"})
+	if err != nil {
+		t.Fatalf("RenderCommentBody returned error: %v", err)
+	}
+	for _, needle := range []string{
+		"1 release(s) skipped because the requested chart version is unavailable.",
+		"**Missing chart versions:** 1 skipped release(s)",
+		"1 release(s) skipped due to other render warnings.",
+		"**Other render warnings:** 1 skipped release(s)",
+		"analysis partial: chart version missing (requested 1.2.3)",
+		"> Render warning: requested version 1.2.3 unavailable",
+		"| **Summary** | requested version 1.2.3 unavailable · highest severity 🔵 info · analysis partial |",
+	} {
+		if !strings.Contains(body, needle) {
+			t.Fatalf("expected body to contain %q, got %s", needle, body)
+		}
 	}
 }
 

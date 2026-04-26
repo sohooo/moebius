@@ -3,6 +3,7 @@ package report
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -254,6 +255,24 @@ func renderCluster(root string, layout config.LayoutConfig, cluster, state, outp
 		chartRef := release.ChartReference()
 		rendered, err := renderer.Render(root, chartRef, release.RepoURL, release.TargetRevision, release.Name, release.Namespace, overridePath)
 		if err != nil {
+			if warning, ok := missingVersionRenderWarning(cluster, release, chartRef, err); ok {
+				if writeErr := writeArtifactMessage(filepath.Join(filepath.Dir(outputRoot), "warnings"), state, cluster, release.Name, []string{warning}); writeErr != nil {
+					return writeErr
+				}
+				if mode == cli.RenderErrorModeWarnSkipRelease {
+					chartDir := filepath.Join(clusterDir, release.Name)
+					if err := os.MkdirAll(chartDir, 0o755); err != nil {
+						return err
+					}
+					if err := os.WriteFile(filepath.Join(chartDir, "namespace.txt"), []byte(release.Namespace+"\n"), 0o644); err != nil {
+						return err
+					}
+					if err := os.WriteFile(filepath.Join(chartDir, renderWarningFilename), []byte(warning+"\n"), 0o644); err != nil {
+						return err
+					}
+					continue
+				}
+			}
 			return fmt.Errorf("render cluster %q release %q: %w", cluster, release.Name, err)
 		}
 
@@ -299,6 +318,28 @@ func renderCluster(root string, layout config.LayoutConfig, cluster, state, outp
 		}
 	}
 	return nil
+}
+
+func missingVersionRenderWarning(cluster string, release config.Release, chartRef string, err error) (string, bool) {
+	var versionErr *helmrender.MissingVersionError
+	if !helmrender.IsMissingVersionError(err) {
+		return "", false
+	}
+	if !errors.As(err, &versionErr) || versionErr == nil {
+		return "", false
+	}
+	message := fmt.Sprintf(
+		"cluster %q release %q chart %q requested chart version %q is unavailable",
+		cluster,
+		release.Name,
+		chartRef,
+		versionErr.TargetRevision,
+	)
+	if versionErr.RepoURL != "" {
+		message += fmt.Sprintf(" (repo %q)", versionErr.RepoURL)
+	}
+	message += fmt.Sprintf(": %v", versionErr.Unwrap())
+	return message, true
 }
 
 func compareCluster(cluster, baselineOutput, currentOutput, diffOutput string, contextLines int, doValidate bool, baselineReleases map[string]config.Release, currentReleases map[string]config.Release) (output.ClusterReport, error) {

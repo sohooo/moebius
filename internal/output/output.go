@@ -325,7 +325,7 @@ func renderClusterComment(report ClusterReport, mode diff.Mode, opts NoteRenderO
 		}
 		fmt.Fprintf(&b, "<details>\n<summary>%s</summary>\n\n", chartSummaryLine(chart, added, removed, changed))
 		if chart.RenderWarning != "" {
-			fmt.Fprintf(&b, "> [!important]\n> Render warning: %s\n\n", chart.RenderWarning)
+			fmt.Fprintf(&b, "> [!important]\n> Render warning: %s\n\n", chartRenderWarningSummary(chart.RenderWarning))
 			renderChartSignalTable(&b, chart, added, removed, changed)
 			fmt.Fprintln(&b, "</details>")
 			fmt.Fprintln(&b)
@@ -547,6 +547,8 @@ type reportStats struct {
 	validationWarnings   int
 	unvalidatedResources int
 	renderWarnings       int
+	missingVersions      int
+	otherRenderWarnings  int
 	renderNotices        int
 }
 
@@ -557,6 +559,11 @@ func collectReportStats(reports []ClusterReport) reportStats {
 		for _, chart := range report.Charts {
 			if chart.RenderWarning != "" {
 				stats.renderWarnings++
+				if isMissingVersionRenderWarning(chart.RenderWarning) {
+					stats.missingVersions++
+				} else {
+					stats.otherRenderWarnings++
+				}
 			}
 			stats.renderNotices += len(chart.Warnings)
 			added, removed, changed := chartChangeCounts(chart)
@@ -591,9 +598,16 @@ func renderTopSummary(b *strings.Builder, reports []ClusterReport, target render
 	if stats.renderWarnings > 0 || stats.renderNotices > 0 {
 		fmt.Fprintln(b, "> [!important]")
 		fmt.Fprintln(b, "> Analysis is partial.")
+		if stats.missingVersions > 0 {
+			fmt.Fprintf(b, "> %d release(s) skipped because the requested chart version is unavailable.\n", stats.missingVersions)
+			fmt.Fprintf(b, "**Missing chart versions:** %d skipped release(s)\n", stats.missingVersions)
+		}
+		if stats.otherRenderWarnings > 0 {
+			fmt.Fprintf(b, "> %d release(s) skipped due to other render warnings.\n", stats.otherRenderWarnings)
+			fmt.Fprintf(b, "**Other render warnings:** %d skipped release(s)\n", stats.otherRenderWarnings)
+		}
 		if stats.renderWarnings > 0 {
-			fmt.Fprintf(b, "> %d release(s) skipped due to render warnings.\n", stats.renderWarnings)
-			fmt.Fprintf(b, "**Render warnings:** %d skipped release(s)\n\n", stats.renderWarnings)
+			fmt.Fprintln(b)
 		}
 		if stats.renderNotices > 0 {
 			fmt.Fprintf(b, "> duplicate YAML keys accepted with last-wins behavior: %d override(s).\n", stats.renderNotices)
@@ -800,13 +814,17 @@ func collectReviewHighlights(reports []ClusterReport, limit int, target renderTa
 				})
 			}
 			if chart.RenderWarning != "" {
+				renderWarningFinding := "analysis partial: render warning skipped detailed diff"
+				if version, ok := missingVersionFromRenderWarning(chart.RenderWarning); ok {
+					renderWarningFinding = fmt.Sprintf("analysis partial: chart version missing (requested %s)", version)
+				}
 				items = append(items, reviewHighlight{
 					validation: validate.StatusWarning,
 					level:      severity.LevelInfo,
 					cluster:    report.Name,
 					kind:       "Chart",
 					name:       chart.Name,
-					finding:    "analysis partial: render warning skipped detailed diff",
+					finding:    renderWarningFinding,
 					anchor:     chartLink,
 					priority:   1,
 				})
@@ -971,6 +989,36 @@ func validationMetadata(stats reportStats) string {
 	return fmt.Sprintf("validation: %d errors, %d warnings, %d unvalidated", stats.validationErrors, stats.validationWarnings, stats.unvalidatedResources)
 }
 
+func isMissingVersionRenderWarning(warning string) bool {
+	_, ok := missingVersionFromRenderWarning(warning)
+	return ok
+}
+
+func missingVersionFromRenderWarning(warning string) (string, bool) {
+	const marker = `requested chart version "`
+	start := strings.Index(warning, marker)
+	if start == -1 {
+		return "", false
+	}
+	start += len(marker)
+	end := strings.Index(warning[start:], `"`)
+	if end == -1 {
+		return "", false
+	}
+	version := strings.TrimSpace(warning[start : start+end])
+	if version == "" {
+		return "", false
+	}
+	return version, true
+}
+
+func chartRenderWarningSummary(warning string) string {
+	if version, ok := missingVersionFromRenderWarning(warning); ok {
+		return fmt.Sprintf("requested version %s unavailable", version)
+	}
+	return warning
+}
+
 func renderCommentTOC(b *strings.Builder, reports []ClusterReport, target renderTarget) {
 	fmt.Fprintln(b, "**Navigation**")
 	fmt.Fprintln(b)
@@ -1048,7 +1096,11 @@ func chartSummaryDetails(chart ChartReport, added, removed, changed int) string 
 	}
 	total := added + removed + changed
 	if chart.RenderWarning != "" {
-		parts = append(parts, "render skipped")
+		if version, ok := missingVersionFromRenderWarning(chart.RenderWarning); ok {
+			parts = append(parts, fmt.Sprintf("requested version %s unavailable", version))
+		} else {
+			parts = append(parts, "render skipped")
+		}
 	} else if total > 0 {
 		if total == 1 {
 			parts = append(parts, "1 resource affected")

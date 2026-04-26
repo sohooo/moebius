@@ -2,12 +2,14 @@ package report
 
 import (
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 
 	"github.com/sohooo/moebius/internal/config"
+	"github.com/sohooo/moebius/internal/helmrender"
 	"github.com/sohooo/moebius/internal/output"
 )
 
@@ -40,6 +42,67 @@ func TestCompareCluster_IncludesChartWithWarningsOnly(t *testing.T) {
 	}
 	if len(report.Charts[0].Warnings) != 1 {
 		t.Fatalf("expected 1 warning, got %d", len(report.Charts[0].Warnings))
+	}
+}
+
+func TestCompareCluster_IncludesChartWithMissingVersionWarningOnly(t *testing.T) {
+	root := t.TempDir()
+	baselineOutput := filepath.Join(root, "baseline")
+	currentOutput := filepath.Join(root, "current")
+	diffOutput := filepath.Join(root, "diff")
+	currentChartDir := filepath.Join(currentOutput, "kube-bravo", "argocd")
+
+	if err := os.MkdirAll(currentChartDir, 0o755); err != nil {
+		t.Fatalf("mkdir current chart dir: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(currentChartDir, "namespace.txt"), []byte("argocd\n"), 0o644); err != nil {
+		t.Fatalf("write namespace: %v", err)
+	}
+	warning := `cluster "kube-bravo" release "argocd" chart "oci://internal.oci.repo/helm-int/argo-cd" requested chart version "1.2.3" is unavailable: manifest unknown`
+	if err := os.WriteFile(filepath.Join(currentChartDir, renderWarningFilename), []byte(warning+"\n"), 0o644); err != nil {
+		t.Fatalf("write render warning: %v", err)
+	}
+
+	report, err := compareCluster("kube-bravo", baselineOutput, currentOutput, diffOutput, 3, false, map[string]config.Release{}, map[string]config.Release{})
+	if err != nil {
+		t.Fatalf("compareCluster returned error: %v", err)
+	}
+	if len(report.Charts) != 1 {
+		t.Fatalf("expected 1 chart, got %d", len(report.Charts))
+	}
+	if report.Charts[0].RenderWarning != warning {
+		t.Fatalf("unexpected render warning %q", report.Charts[0].RenderWarning)
+	}
+}
+
+func TestMissingVersionRenderWarning_FormatsIdentity(t *testing.T) {
+	release := config.Release{
+		Name:           "argocd",
+		RepoURL:        "oci://internal.oci.repo/helm-int",
+		Chart:          "argo-cd",
+		TargetRevision: "1.2.3",
+	}
+	err := &helmrender.MissingVersionError{
+		ChartRef:        "oci://internal.oci.repo/helm-int/argo-cd",
+		RepoURL:         release.RepoURL,
+		TargetRevision:  release.TargetRevision,
+		UnderlyingError: errors.New("manifest unknown"),
+	}
+
+	got, ok := missingVersionRenderWarning("kube-bravo", release, release.ChartReference(), err)
+	if !ok {
+		t.Fatal("expected missing version warning")
+	}
+	for _, needle := range []string{
+		`cluster "kube-bravo" release "argocd"`,
+		`chart "oci://internal.oci.repo/helm-int/argo-cd"`,
+		`requested chart version "1.2.3" is unavailable`,
+		`repo "oci://internal.oci.repo/helm-int"`,
+		`manifest unknown`,
+	} {
+		if !strings.Contains(got, needle) {
+			t.Fatalf("expected warning to contain %q, got %q", needle, got)
+		}
 	}
 }
 

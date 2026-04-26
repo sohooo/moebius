@@ -2,6 +2,7 @@ package helmrender
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -20,6 +21,39 @@ import (
 
 type Renderer struct {
 	cacheDir string
+}
+
+type MissingVersionError struct {
+	ChartRef        string
+	RepoURL         string
+	TargetRevision  string
+	UnderlyingError error
+}
+
+func (e *MissingVersionError) Error() string {
+	if e == nil {
+		return ""
+	}
+	ref := e.ChartRef
+	if ref == "" {
+		ref = "<unknown>"
+	}
+	if e.TargetRevision == "" {
+		return fmt.Sprintf("chart version unavailable for %s: %v", ref, e.UnderlyingError)
+	}
+	return fmt.Sprintf("chart version %q unavailable for %s: %v", e.TargetRevision, ref, e.UnderlyingError)
+}
+
+func (e *MissingVersionError) Unwrap() error {
+	if e == nil {
+		return nil
+	}
+	return e.UnderlyingError
+}
+
+func IsMissingVersionError(err error) bool {
+	var target *MissingVersionError
+	return errors.As(err, &target)
 }
 
 func New(cacheDir string) *Renderer {
@@ -76,7 +110,7 @@ func (r *Renderer) loadChart(root string, chartRef string, repoURL string, targe
 		install.Version = targetRevision
 		chartPath, err := install.ChartPathOptions.LocateChart(chartRef, settings)
 		if err != nil {
-			return nil, err
+			return nil, classifyLocateChartError(chartRef, "", targetRevision, err)
 		}
 		return loader.Load(chartPath)
 	}
@@ -97,7 +131,7 @@ func (r *Renderer) loadChart(root string, chartRef string, repoURL string, targe
 		install.ChartPathOptions.RepoURL = repoURL
 		chartPath, err := install.ChartPathOptions.LocateChart(chartRef, settings)
 		if err != nil {
-			return nil, err
+			return nil, classifyLocateChartError(chartRef, repoURL, targetRevision, err)
 		}
 		return loader.Load(chartPath)
 	}
@@ -159,4 +193,42 @@ func renderChart(ch *chart.Chart, values chartutil.Values) (string, error) {
 		buf.WriteByte('\n')
 	}
 	return buf.String(), nil
+}
+
+func classifyLocateChartError(chartRef, repoURL, targetRevision string, err error) error {
+	if !looksLikeMissingChartVersion(err) {
+		return err
+	}
+	return &MissingVersionError{
+		ChartRef:        chartRef,
+		RepoURL:         repoURL,
+		TargetRevision:  targetRevision,
+		UnderlyingError: err,
+	}
+}
+
+func looksLikeMissingChartVersion(err error) bool {
+	if err == nil {
+		return false
+	}
+	message := strings.ToLower(err.Error())
+	needles := []string{
+		"chart version not found",
+		"no chart version found",
+		"could not find a version",
+		"no matching version",
+		"version not found",
+		"tag not found",
+		"manifest unknown",
+		"not found",
+	}
+	if !strings.Contains(message, "version") && !strings.Contains(message, "tag") && !strings.Contains(message, "manifest unknown") {
+		return false
+	}
+	for _, needle := range needles {
+		if strings.Contains(message, needle) {
+			return true
+		}
+	}
+	return false
 }
