@@ -2,45 +2,14 @@
 
 **Status:** changes detected
 
-Commit: `deadbeef`  
-Base ref: `master`  
-Diff mode: `semantic`  
-Generated: `2026-04-05T12:00:00Z`
-
-## Review Summary
-
-| Clusters | Charts | Resources | Added | Removed | Changed |
-| ---: | ---: | ---: | ---: | ---: | ---: |
-| 1 | 1 | 2 | 0 | 0 | 2 |
-
-**Highlights by cluster**
-
-<details>
-<summary>kube-bravo · 🔴 1 · 🟠 1 · 2 highlights</summary>
-
-| Severity | Resource | Finding |
-| --- | --- | --- |
-| 🔴 critical | [`ClusterRole/hello-world`](#resource-kube-bravo-clusterrole-hello-world) | RBAC rules changed at `rules` |
-| 🟠 high | [`Deployment/hello-world`](#resource-kube-bravo-deployment-hello-world) | replicas changed 2 -> 3 |
-
-</details>
-
-
 ---
 
 **Navigation**
 
 - [kube-bravo](#cluster-kube-bravo) · added 0 · removed 0 · changed 2
 
-<details>
-<summary>Cluster Details · 1 cluster · 1 chart · 2 resources</summary>
-
 <a id="cluster-kube-bravo"></a>
 ## Cluster `kube-bravo`
-
-| Added | Removed | Changed |
-| ---: | ---: | ---: |
-| 0 | 0 | 2 |
 
 Charts with changes: 1
 
@@ -65,9 +34,7 @@ Charts with changes: 1
 <a id="resource-kube-bravo-clusterrole-hello-world"></a>
 #### Resource `kube-bravo · ClusterRole/hello-world` (changed, severity: critical)
 
-- changed · severity 🔴 critical · [up](#chart-kube-bravo-hello-world)
-- validation coverage: unvalidated (no schema available)
-- RBAC rules changed at `rules`
+- changed · severity 🔴 critical · validation: unvalidated (no schema available) · [up](#chart-kube-bravo-hello-world)
 
 ```diff
 # Path: rules (changed)
@@ -81,9 +48,7 @@ Charts with changes: 1
 <a id="resource-kube-bravo-deployment-hello-world"></a>
 #### Resource `kube-bravo · Deployment/hello-world` (changed, severity: high)
 
-- changed · severity 🟠 high · [up](#chart-kube-bravo-hello-world)
-- validation coverage: validated via embedded
-- replicas changed 2 -> 3
+- changed · severity 🟠 high · validation: validated via embedded · [up](#chart-kube-bravo-hello-world)
 
 ```diff
 # Path: spec.replicas (changed)
@@ -94,10 +59,8 @@ spec:
 
 </details>
 
-</details>
-
 ---
 
-_Report compares merge-base and current MR state · validation: 0 errors, 0 warnings, 1 unvalidated._
+_Report compares merge-base and current MR state | validation: 0 errors, 0 warnings, 1 unvalidated | commit: `deadbeef` | base ref: `master` | diff mode: `semantic` | generated: `2026-04-05T12:00:00Z`._
 
 <!-- mobius:mr-diff -->

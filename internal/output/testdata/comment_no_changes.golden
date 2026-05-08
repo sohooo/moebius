@@ -2,8 +2,10 @@
 
 **Status:** no effective changes
 
-Commit: `deadbeef`
-
 _No effective changes._
+
+---
+
+_Report compares merge-base and current MR state | validation: clean | commit: `deadbeef`._
 
 <!-- mobius:mr-diff -->

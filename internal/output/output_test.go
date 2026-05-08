@@ -92,17 +92,14 @@ func TestRenderCommentBody_IncludesRenderWarnings(t *testing.T) {
 	if strings.Contains(body, "| Severity | Cluster | Resource | Finding |") {
 		t.Fatalf("expected no global highlights table in body, got %s", body)
 	}
-	if !strings.Contains(body, "| Severity | Resource | Finding |") {
-		t.Fatalf("expected grouped highlights table in body, got %s", body)
-	}
-	if !strings.Contains(body, "analysis partial: render warning skipped detailed diff") {
-		t.Fatalf("expected render warning highlight in body, got %s", body)
-	}
-	if !strings.Contains(body, "[`Chart/argocd`](#chart-kube-bravo-argocd)") {
-		t.Fatalf("expected render warning chart link in body, got %s", body)
+	if strings.Contains(body, "Highlights by cluster") || strings.Contains(body, "| Severity | Resource | Finding |") {
+		t.Fatalf("expected no highlights section in body, got %s", body)
 	}
 	if !strings.Contains(body, "Analysis is partial.") {
 		t.Fatalf("expected partial analysis summary in body, got %s", body)
+	}
+	if strings.Index(body, "Analysis is partial.") > strings.Index(body, "**Navigation**") {
+		t.Fatalf("expected partial analysis warning above navigation, got %s", body)
 	}
 	if !strings.Contains(body, "1 release(s) skipped due to other render warnings.") {
 		t.Fatalf("expected generic skipped release summary in body, got %s", body)
@@ -116,7 +113,7 @@ func TestRenderCommentBody_IncludesRenderWarnings(t *testing.T) {
 	if !strings.Contains(body, "| **Summary** | render skipped · highest severity 🔵 info · analysis partial |") {
 		t.Fatalf("expected chart summary table in body, got %s", body)
 	}
-	if !strings.Contains(body, "_Report compares merge-base and current MR state · validation: clean._") {
+	if !strings.Contains(body, "_Report compares merge-base and current MR state | validation: clean | commit: `deadbeef`._") {
 		t.Fatalf("expected clean validation metadata in footer, got %s", body)
 	}
 }
@@ -147,7 +144,6 @@ func TestRenderCommentBody_DistinguishesMissingChartVersions(t *testing.T) {
 		"**Missing chart versions:** 1 skipped release(s)",
 		"1 release(s) skipped due to other render warnings.",
 		"**Other render warnings:** 1 skipped release(s)",
-		"analysis partial: chart version missing (requested 1.2.3)",
 		"> Render warning: requested version 1.2.3 unavailable",
 		"| **Summary** | requested version 1.2.3 unavailable · highest severity 🔵 info · analysis partial |",
 	} {
@@ -157,7 +153,7 @@ func TestRenderCommentBody_DistinguishesMissingChartVersions(t *testing.T) {
 	}
 }
 
-func TestRenderCommentBody_LinksHighlightsAndShowsVersionChanges(t *testing.T) {
+func TestRenderCommentBody_ShowsVersionChanges(t *testing.T) {
 	report := sampleClusterReport()
 	report.Charts[0].HasRemoteSource = true
 	report.Charts[0].BaselineTargetRevision = "10.3.0"
@@ -168,10 +164,7 @@ func TestRenderCommentBody_LinksHighlightsAndShowsVersionChanges(t *testing.T) {
 		t.Fatalf("RenderCommentBody returned error: %v", err)
 	}
 	if !strings.Contains(body, "[`ClusterRole/hello-world`](#resource-kube-bravo-clusterrole-hello-world)") {
-		t.Fatalf("expected linked highlight resource in body, got %s", body)
-	}
-	if !strings.Contains(body, "[`Chart/hello-world`](#chart-kube-bravo-hello-world) | version upgrade: 10.3.0 → 12.0.2") {
-		t.Fatalf("expected linked version-upgrade highlight in body, got %s", body)
+		t.Fatalf("expected linked chart change resource in body, got %s", body)
 	}
 	if !strings.Contains(body, "version 10.3.0 → 12.0.2") {
 		t.Fatalf("expected chart version change in body, got %s", body)
@@ -230,7 +223,7 @@ func TestRenderDescriptionBody_UsesMobiusHeadingsAndLinks(t *testing.T) {
 	if !strings.Contains(body, "- changed · severity 🟠 high") {
 		t.Fatalf("expected resource metadata bullet with severity badge:\n%s", body)
 	}
-	if !strings.Contains(body, "- changed · severity 🟠 high · [up](#user-content-mobius-chart-kube-bravo-hello-world)") {
+	if !strings.Contains(body, "- changed · severity 🟠 high · validation: validated via embedded · [up](#user-content-mobius-chart-kube-bravo-hello-world)") {
 		t.Fatalf("expected resource metadata bullet with chart backlink:\n%s", body)
 	}
 	if strings.Contains(body, "#møbius") || strings.Contains(body, "## møbius") || strings.Contains(body, "### møbius") || strings.Contains(body, "#### møbius") {
@@ -419,25 +412,30 @@ func TestRenderCommentBody_ChartChangesListsAllResources(t *testing.T) {
 	}
 }
 
-func TestRenderCommentBody_FoldsClusterDetailsAfterNavigation(t *testing.T) {
+func TestRenderCommentBody_RendersClusterDetailsAfterNavigationWithoutOuterFold(t *testing.T) {
 	body, err := RenderCommentBody([]ClusterReport{sampleClusterReport()}, diff.ModeSemantic, NoteMetadata{CommitSHA: "deadbeef"})
 	if err != nil {
 		t.Fatalf("RenderCommentBody returned error: %v", err)
 	}
 
-	highlights := strings.Index(body, "**Highlights by cluster**")
 	navigation := strings.Index(body, "**Navigation**")
-	fold := strings.Index(body, "<summary>Cluster Details · 1 cluster · 1 chart · 2 resources</summary>")
 	clusterHeading := strings.Index(body, "## Cluster `kube-bravo`")
-	if highlights == -1 || navigation == -1 || fold == -1 || clusterHeading == -1 {
-		t.Fatalf("expected highlights, navigation, cluster details fold, and cluster heading:\n%s", body)
+	chartFold := strings.Index(body, "<summary>Chart `hello-world`")
+	if navigation == -1 || clusterHeading == -1 || chartFold == -1 {
+		t.Fatalf("expected navigation, cluster heading, and chart fold:\n%s", body)
 	}
-	if !(highlights < navigation && navigation < fold && fold < clusterHeading) {
-		t.Fatalf("expected highlights and navigation outside the cluster details fold:\n%s", body)
+	if strings.Contains(body, "Cluster Details ·") {
+		t.Fatalf("expected no outer cluster details fold:\n%s", body)
+	}
+	if strings.Contains(body, "**Highlights by cluster**") {
+		t.Fatalf("expected no highlights section:\n%s", body)
+	}
+	if !(navigation < clusterHeading && clusterHeading < chartFold) {
+		t.Fatalf("expected navigation before cluster body and chart fold:\n%s", body)
 	}
 }
 
-func TestRenderCommentBody_GroupsHighlightsByClusterWithoutGlobalTable(t *testing.T) {
+func TestRenderCommentBody_DoesNotRenderHighlights(t *testing.T) {
 	first := sampleClusterReport()
 	second := sampleClusterReport()
 	second.Name = "kube-charlie"
@@ -455,10 +453,37 @@ func TestRenderCommentBody_GroupsHighlightsByClusterWithoutGlobalTable(t *testin
 	if strings.Contains(body, "_Additional highlights are grouped by cluster below._") {
 		t.Fatalf("expected no grouped highlights note:\n%s", body)
 	}
-	if !strings.Contains(body, "<summary>kube-bravo · 🔴 1 · 🟠 1 · 2 highlights</summary>") ||
-		!strings.Contains(body, "<summary>kube-charlie · 🔴 1 · 🟠 1 · 2 highlights</summary>") ||
-		!strings.Contains(body, "<summary>kube-delta · 🔴 1 · 🟠 1 · 2 highlights</summary>") {
-		t.Fatalf("expected grouped highlight summaries for each cluster:\n%s", body)
+	if strings.Contains(body, "Highlights by cluster") || strings.Contains(body, "highlights</summary>") {
+		t.Fatalf("expected no grouped highlights:\n%s", body)
+	}
+}
+
+func TestRenderCommentBody_FooterUsesCompactMetadataLinks(t *testing.T) {
+	body, err := RenderCommentBody([]ClusterReport{sampleClusterReport()}, diff.ModeSemantic, NoteMetadata{
+		PipelineURL: "https://gitlab.example/pipelines/123",
+		JobURL:      "https://gitlab.example/jobs/456",
+		CommitSHA:   "deadbeef",
+		BaseRef:     "master",
+		DiffMode:    "semantic",
+		GeneratedAt: "2026-04-05T12:00:00Z",
+	})
+	if err != nil {
+		t.Fatalf("RenderCommentBody returned error: %v", err)
+	}
+	if strings.Contains(body, "Pipeline: https://") || strings.Contains(body, "Job: https://") {
+		t.Fatalf("expected no raw top metadata URLs:\n%s", body)
+	}
+	for _, needle := range []string{
+		"[pipeline](https://gitlab.example/pipelines/123)",
+		"[job](https://gitlab.example/jobs/456)",
+		"commit: `deadbeef`",
+		"base ref: `master`",
+		"diff mode: `semantic`",
+		"generated: `2026-04-05T12:00:00Z`",
+	} {
+		if !strings.Contains(body, needle) {
+			t.Fatalf("expected compact footer metadata %q:\n%s", needle, body)
+		}
 	}
 }
 

@@ -125,32 +125,10 @@ func renderReportBodyWithOptions(reports []ClusterReport, mode diff.Mode, meta N
 	if opts.Status != "" {
 		fmt.Fprintf(&b, "**Status:** %s\n\n", opts.Status)
 	}
-	if meta.PipelineURL != "" || meta.JobURL != "" || meta.CommitSHA != "" {
-		var fields []string
-		if meta.PipelineURL != "" {
-			fields = append(fields, fmt.Sprintf("Pipeline: %s", meta.PipelineURL))
-		}
-		if meta.JobURL != "" {
-			fields = append(fields, fmt.Sprintf("Job: %s", meta.JobURL))
-		}
-		if meta.CommitSHA != "" {
-			fields = append(fields, fmt.Sprintf("Commit: `%s`", meta.CommitSHA))
-		}
-		if meta.BaseRef != "" {
-			fields = append(fields, fmt.Sprintf("Base ref: `%s`", meta.BaseRef))
-		}
-		if meta.DiffMode != "" {
-			fields = append(fields, fmt.Sprintf("Diff mode: `%s`", meta.DiffMode))
-		}
-		if meta.GeneratedAt != "" {
-			fields = append(fields, fmt.Sprintf("Generated: `%s`", meta.GeneratedAt))
-		}
-		b.WriteString(strings.Join(fields, "  \n"))
-		b.WriteString("\n\n")
-	}
 
 	if len(reports) == 0 {
 		b.WriteString("_No effective changes._\n\n")
+		renderFooter(&b, opts, reportStats{}, meta)
 		if opts.target == renderTargetNote {
 			b.WriteString(StickyMarker)
 		}
@@ -160,8 +138,7 @@ func renderReportBodyWithOptions(reports []ClusterReport, mode diff.Mode, meta N
 	renderedReports := cloneReports(reports)
 	sortReportsForComment(renderedReports)
 	stats := collectReportStats(renderedReports)
-	renderTopSummary(&b, renderedReports, opts.target, stats)
-	b.WriteByte('\n')
+	renderPartialAnalysisWarnings(&b, stats)
 	fmt.Fprintln(&b, "---")
 	fmt.Fprintln(&b)
 	renderCommentTOC(&b, renderedReports, opts.target)
@@ -170,7 +147,7 @@ func renderReportBodyWithOptions(reports []ClusterReport, mode diff.Mode, meta N
 	if err := renderClusterDetails(&b, renderedReports, mode, opts); err != nil {
 		return "", err
 	}
-	renderFooter(&b, opts, stats)
+	renderFooter(&b, opts, stats, meta)
 	if opts.target == renderTargetNote {
 		b.WriteString(StickyMarker)
 	}
@@ -305,9 +282,6 @@ func renderClusterComment(report ClusterReport, mode diff.Mode, opts NoteRenderO
 	} else {
 		fmt.Fprintf(&b, "## %s\n\n", descriptionClusterHeading(report.Name))
 	}
-	fmt.Fprintln(&b, "| Added | Removed | Changed |")
-	fmt.Fprintln(&b, "| ---: | ---: | ---: |")
-	fmt.Fprintf(&b, "| %d | %d | %d |\n\n", report.Added, report.Removed, report.Changed)
 
 	if len(report.Charts) == 0 {
 		fmt.Fprintln(&b, "_No effective changes._")
@@ -366,23 +340,13 @@ func renderClusterComment(report ClusterReport, mode diff.Mode, opts NoteRenderO
 			} else {
 				fmt.Fprintf(&b, "#### %s\n\n", descriptionResourceHeading(report.Name, chart.Name, resource.Namespace, resource.Kind, resource.Name))
 			}
-			fmt.Fprintf(&b, "- %s · severity %s%s · [up](#%s)\n", resource.State, severityBadge(resource.Assessment.Level), validationSuffix(resource.Validation), chartLinkAnchor(report.Name, chart.Name, opts.target))
-			if detail := validationCoverageLine(resource.Validation); detail != "" {
-				fmt.Fprintf(&b, "- validation coverage: %s\n", detail)
-			}
-			if findings := topValidationFindings(resource, 3); len(findings) > 0 {
-				for _, finding := range findings {
+			fmt.Fprintf(&b, "- %s\n", resourceMetadataLine(report.Name, chart.Name, resource, opts.target))
+			if resource.Validation.Status != "" && resource.Validation.Status != validate.StatusValid {
+				for _, finding := range topValidationFindings(resource, 3) {
 					fmt.Fprintf(&b, "- validation: %s\n", finding)
 				}
 			}
-			if findings := topFindings(resource, 3); len(findings) > 0 {
-				for _, finding := range findings {
-					fmt.Fprintf(&b, "- %s\n", finding)
-				}
-			}
-			if detail := validationCoverageLine(resource.Validation); detail != "" || len(topValidationFindings(resource, 3)) > 0 || len(topFindings(resource, 3)) > 0 {
-				fmt.Fprintln(&b)
-			}
+			fmt.Fprintln(&b)
 			semanticMarkdown, err := diff.RenderSemanticMarkdown(resource.Result.Changes)
 			if err != nil || strings.TrimSpace(semanticMarkdown) == "" {
 				semanticMarkdown = resource.Semantic
@@ -412,7 +376,6 @@ func renderClusterComment(report ClusterReport, mode diff.Mode, opts NoteRenderO
 }
 
 func renderClusterDetails(b *strings.Builder, reports []ClusterReport, mode diff.Mode, opts NoteRenderOptions) error {
-	fmt.Fprintf(b, "<details>\n<summary>%s</summary>\n\n", clusterDetailsSummary(reports))
 	for i := range reports {
 		chunk, err := renderClusterComment(reports[i], mode, opts)
 		if err != nil {
@@ -424,22 +387,7 @@ func renderClusterDetails(b *strings.Builder, reports []ClusterReport, mode diff
 		b.WriteString(strings.TrimRight(chunk, "\n"))
 		b.WriteString("\n\n")
 	}
-	fmt.Fprintln(b, "</details>")
-	fmt.Fprintln(b)
 	return nil
-}
-
-func clusterDetailsSummary(reports []ClusterReport) string {
-	charts := 0
-	resources := 0
-	for _, report := range reports {
-		charts += len(report.Charts)
-		for _, chart := range report.Charts {
-			added, removed, changed := chartChangeCounts(chart)
-			resources += added + removed + changed
-		}
-	}
-	return fmt.Sprintf("Cluster Details · %s · %s · %s", countLabel(len(reports), "cluster"), countLabel(charts, "chart"), countLabel(resources, "resource"))
 }
 
 func chartChangeCounts(chart ChartReport) (added, removed, changed int) {
@@ -524,18 +472,6 @@ func stateWeight(state string) int {
 	}
 }
 
-type reviewHighlight struct {
-	validation validate.Status
-	level      severity.Level
-	cluster    string
-	kind       string
-	name       string
-	finding    string
-	anchor     string
-	state      string
-	priority   int
-}
-
 type reportStats struct {
 	clusters             int
 	charts               int
@@ -587,14 +523,7 @@ func collectReportStats(reports []ClusterReport) reportStats {
 	return stats
 }
 
-func renderTopSummary(b *strings.Builder, reports []ClusterReport, target renderTarget, stats reportStats) {
-	highlights := collectReviewHighlights(reports, 0, target)
-
-	fmt.Fprintln(b, "## Review Summary")
-	fmt.Fprintln(b)
-	fmt.Fprintln(b, "| Clusters | Charts | Resources | Added | Removed | Changed |")
-	fmt.Fprintln(b, "| ---: | ---: | ---: | ---: | ---: | ---: |")
-	fmt.Fprintf(b, "| %d | %d | %d | %d | %d | %d |\n\n", stats.clusters, stats.charts, stats.resources, stats.added, stats.removed, stats.changed)
+func renderPartialAnalysisWarnings(b *strings.Builder, stats reportStats) {
 	if stats.renderWarnings > 0 || stats.renderNotices > 0 {
 		fmt.Fprintln(b, "> [!important]")
 		fmt.Fprintln(b, "> Analysis is partial.")
@@ -616,62 +545,6 @@ func renderTopSummary(b *strings.Builder, reports []ClusterReport, target render
 			fmt.Fprintln(b)
 		}
 	}
-	if len(highlights) > 0 {
-		renderHighlightsByCluster(b, reports, highlights)
-	}
-}
-
-func renderHighlightsByCluster(b *strings.Builder, reports []ClusterReport, highlights []reviewHighlight) {
-	grouped := map[string][]reviewHighlight{}
-	for _, highlight := range highlights {
-		grouped[highlight.cluster] = append(grouped[highlight.cluster], highlight)
-	}
-	if len(grouped) == 0 {
-		return
-	}
-	fmt.Fprintln(b, "**Highlights by cluster**")
-	fmt.Fprintln(b)
-	for _, report := range reports {
-		items := grouped[report.Name]
-		if len(items) == 0 {
-			continue
-		}
-		fmt.Fprintf(b, "<details>\n<summary>%s</summary>\n\n", highlightClusterSummary(report.Name, items))
-		fmt.Fprintln(b, "| Severity | Resource | Finding |")
-		fmt.Fprintln(b, "| --- | --- | --- |")
-		for _, highlight := range items {
-			fmt.Fprintf(b, "| %s | [%s](#%s) | %s |\n", severityBadge(highlight.level), highlightResourceLabel(highlight), highlight.anchor, escapeTable(highlight.finding))
-		}
-		fmt.Fprintln(b)
-		fmt.Fprintln(b, "</details>")
-		fmt.Fprintln(b)
-	}
-}
-
-func highlightClusterSummary(cluster string, highlights []reviewHighlight) string {
-	counts := map[severity.Level]int{}
-	for _, highlight := range highlights {
-		counts[highlight.level]++
-	}
-	parts := []string{cluster}
-	for _, level := range []severity.Level{severity.LevelCritical, severity.LevelHigh, severity.LevelMedium, severity.LevelLow, severity.LevelInfo} {
-		if counts[level] > 0 {
-			parts = append(parts, fmt.Sprintf("%s %d", severityIcon(level), counts[level]))
-		}
-	}
-	parts = append(parts, countLabel(len(highlights), "highlight"))
-	return strings.Join(parts, " · ")
-}
-
-func highlightResourceLabel(highlight reviewHighlight) string {
-	return fmt.Sprintf("`%s/%s`", highlight.kind, highlight.name)
-}
-
-func countLabel(n int, singular string) string {
-	if n == 1 {
-		return fmt.Sprintf("%d %s", n, singular)
-	}
-	return fmt.Sprintf("%d %ss", n, singular)
 }
 
 func chartKinds(chart ChartReport) []string {
@@ -793,106 +666,6 @@ func chartSeverityCounts(chart ChartReport) map[severity.Level]int {
 	return counts
 }
 
-func collectReviewHighlights(reports []ClusterReport, limit int, target renderTarget) []reviewHighlight {
-	var items []reviewHighlight
-	for _, report := range reports {
-		for _, chart := range report.Charts {
-			chartLink := chartAnchor(report.Name, chart.Name)
-			if target == renderTargetDescription {
-				chartLink = descriptionAnchor(descriptionChartHeading(report.Name, chart.Name))
-			}
-			if versionChange := chartVersionChange(chart); versionChange != "" {
-				items = append(items, reviewHighlight{
-					validation: validate.StatusValid,
-					level:      chartSeverity(chart),
-					cluster:    report.Name,
-					kind:       "Chart",
-					name:       chart.Name,
-					finding:    "version upgrade: " + versionChange,
-					anchor:     chartLink,
-					priority:   2,
-				})
-			}
-			if chart.RenderWarning != "" {
-				renderWarningFinding := "analysis partial: render warning skipped detailed diff"
-				if version, ok := missingVersionFromRenderWarning(chart.RenderWarning); ok {
-					renderWarningFinding = fmt.Sprintf("analysis partial: chart version missing (requested %s)", version)
-				}
-				items = append(items, reviewHighlight{
-					validation: validate.StatusWarning,
-					level:      severity.LevelInfo,
-					cluster:    report.Name,
-					kind:       "Chart",
-					name:       chart.Name,
-					finding:    renderWarningFinding,
-					anchor:     chartLink,
-					priority:   1,
-				})
-			}
-			if len(chart.Warnings) > 0 {
-				items = append(items, reviewHighlight{
-					validation: validate.StatusWarning,
-					level:      severity.LevelInfo,
-					cluster:    report.Name,
-					kind:       "Chart",
-					name:       chart.Name,
-					finding:    fmt.Sprintf("analysis partial: duplicate YAML keys accepted with last-wins behavior (%d override(s))", len(chart.Warnings)),
-					anchor:     chartLink,
-					priority:   1,
-				})
-			}
-			for _, resource := range chart.Resources {
-				if finding := primaryResourceHighlight(resource); finding != "" {
-					resourceLink := resourceAnchor(report.Name, resource.Kind, resource.Name)
-					if target == renderTargetDescription {
-						resourceLink = descriptionAnchor(descriptionResourceHeading(report.Name, chart.Name, resource.Namespace, resource.Kind, resource.Name))
-					}
-					items = append(items, reviewHighlight{
-						validation: resource.Validation.Status,
-						level:      resource.Assessment.Level,
-						cluster:    report.Name,
-						kind:       resource.Kind,
-						name:       resource.Name,
-						finding:    finding,
-						anchor:     resourceLink,
-						state:      resource.State,
-						priority:   resourceHighlightPriority(resource),
-					})
-				}
-			}
-		}
-	}
-	sort.SliceStable(items, func(i, j int) bool {
-		if items[i].priority != items[j].priority {
-			return items[i].priority < items[j].priority
-		}
-		if validateStatusRank(items[i].validation) != validateStatusRank(items[j].validation) {
-			return validateStatusRank(items[i].validation) > validateStatusRank(items[j].validation)
-		}
-		if severity.Rank(items[i].level) != severity.Rank(items[j].level) {
-			return severity.Rank(items[i].level) > severity.Rank(items[j].level)
-		}
-		if stateWeight(items[i].state) != stateWeight(items[j].state) {
-			return stateWeight(items[i].state) < stateWeight(items[j].state)
-		}
-		if items[i].cluster != items[j].cluster {
-			return items[i].cluster < items[j].cluster
-		}
-		if items[i].kind != items[j].kind {
-			return items[i].kind < items[j].kind
-		}
-		if items[i].name != items[j].name {
-			return items[i].name < items[j].name
-		}
-		return items[i].finding < items[j].finding
-	})
-	items = dedupeHighlights(items)
-	if limit <= 0 || len(items) <= limit {
-		return items
-	}
-	return items[:limit]
-}
-
 func formatSeveritySummary(counts map[severity.Level]int) string {
 	order := []severity.Level{
 		severity.LevelCritical,
@@ -950,6 +723,20 @@ func validationCoverageLine(result validate.Result) string {
 	}
 }
 
+func resourceMetadataLine(cluster, chart string, resource ResourceReport, target renderTarget) string {
+	parts := []string{
+		resource.State,
+		fmt.Sprintf("severity %s", severityBadge(resource.Assessment.Level)),
+	}
+	if detail := validationCoverageLine(resource.Validation); detail != "" {
+		parts = append(parts, "validation: "+detail)
+	} else if resource.Validation.Status != "" && resource.Validation.Status != validate.StatusValid {
+		parts = append(parts, "validation: "+string(resource.Validation.Status))
+	}
+	parts = append(parts, fmt.Sprintf("[up](#%s)", chartLinkAnchor(cluster, chart, target)))
+	return strings.Join(parts, " · ")
+}
+
 func validateStatusRank(status validate.Status) int {
 	switch status {
 	case validate.StatusError:
@@ -961,25 +748,46 @@ func validateStatusRank(status validate.Status) int {
 	}
 }
 
-func renderFooter(b *strings.Builder, opts NoteRenderOptions, stats reportStats) {
+func renderFooter(b *strings.Builder, opts NoteRenderOptions, stats reportStats, meta NoteMetadata) {
 	if b.Len() > 0 && !strings.HasSuffix(b.String(), "\n\n") {
 		b.WriteString("\n")
 	}
 	fmt.Fprintln(b, "---")
 	fmt.Fprintln(b)
-	validation := validationMetadata(stats)
-	if opts.Mode == cli.CommentModeSummaryArtifacts {
-		fmt.Fprintf(b, "_Compact summary mode. Full details are available in pipeline artifacts · %s._\n", validation)
-	} else if opts.Mode == cli.CommentModeSummary {
-		if opts.target == renderTargetDescription {
-			fmt.Fprintf(b, "_Summary mode. Full resource diffs are omitted from this MR description report · %s._\n", validation)
-		} else {
-			fmt.Fprintf(b, "_Summary mode. Full resource diffs are omitted from this MR note · %s._\n", validation)
-		}
-	} else {
-		fmt.Fprintf(b, "_Report compares merge-base and current MR state · %s._\n", validation)
+	fields := []string{footerModeText(opts), validationMetadata(stats)}
+	if meta.CommitSHA != "" {
+		fields = append(fields, fmt.Sprintf("commit: `%s`", meta.CommitSHA))
 	}
+	if meta.BaseRef != "" {
+		fields = append(fields, fmt.Sprintf("base ref: `%s`", meta.BaseRef))
+	}
+	if meta.DiffMode != "" {
+		fields = append(fields, fmt.Sprintf("diff mode: `%s`", meta.DiffMode))
+	}
+	if meta.GeneratedAt != "" {
+		fields = append(fields, fmt.Sprintf("generated: `%s`", meta.GeneratedAt))
+	}
+	if meta.PipelineURL != "" {
+		fields = append(fields, fmt.Sprintf("[pipeline](%s)", meta.PipelineURL))
+	}
+	if meta.JobURL != "" {
+		fields = append(fields, fmt.Sprintf("[job](%s)", meta.JobURL))
+	}
+	fmt.Fprintf(b, "_%s._\n", strings.Join(fields, " | "))
 	fmt.Fprintln(b)
+}
+
+func footerModeText(opts NoteRenderOptions) string {
+	if opts.Mode == cli.CommentModeSummaryArtifacts {
+		return "Compact summary mode. Full details are available in pipeline artifacts"
+	}
+	if opts.Mode == cli.CommentModeSummary {
+		if opts.target == renderTargetDescription {
+			return "Summary mode. Full resource diffs are omitted from this MR description report"
+		}
+		return "Summary mode. Full resource diffs are omitted from this MR note"
+	}
+	return "Report compares merge-base and current MR state"
 }
 
 func validationMetadata(stats reportStats) string {
@@ -1382,20 +1190,6 @@ func escapeTable(s string) string {
 	return strings.ReplaceAll(s, "|", "\\|")
 }
 
-func dedupeHighlights(in []reviewHighlight) []reviewHighlight {
-	seen := map[string]struct{}{}
-	out := make([]reviewHighlight, 0, len(in))
-	for _, item := range in {
-		key := item.cluster + "\x00" + item.kind + "\x00" + item.name + "\x00" + item.finding + "\x00" + item.anchor + "\x00" + string(item.level) + "\x00" + string(item.validation)
-		if _, ok := seen[key]; ok {
-			continue
-		}
-		seen[key] = struct{}{}
-		out = append(out, item)
-	}
-	return out
-}
-
 func primaryResourceHighlight(resource ResourceReport) string {
 	if len(resource.Validation.Findings) > 0 && resource.Validation.Status != validate.StatusValid {
 		line := resource.Validation.Findings[0].Message
@@ -1408,28 +1202,6 @@ func primaryResourceHighlight(resource ResourceReport) string {
 		return resource.Assessment.Findings[0].Reason
 	}
 	return ""
-}
-
-func resourceHighlightPriority(resource ResourceReport) int {
-	switch resource.Validation.Status {
-	case validate.StatusError:
-		return 0
-	case validate.StatusWarning:
-		return 0
-	}
-	if resource.Assessment.Level == severity.LevelCritical || resource.Assessment.Level == severity.LevelHigh {
-		return 3
-	}
-	switch resource.State {
-	case "removed":
-		return 4
-	case "changed":
-		return 5
-	case "added":
-		return 6
-	default:
-		return 7
-	}
 }
 
 func emptyToNone(v string) string {
