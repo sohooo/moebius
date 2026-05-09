@@ -1,1 +1,13 @@
-bin/møbius
+# Local build outputs.
+bin/
+build/
+dist/
+coverage/
+.mobius-out/
+
+# Accidental local binaries.
+mobius
+møbius
+test/
+*.test
+*.out

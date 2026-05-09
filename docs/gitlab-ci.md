@@ -15,7 +15,7 @@ Recommended pipeline job:
 ```yaml
 mobius-diff:
   stage: test
-  image: ghcr.io/sohooo/moebius:v0.2.0
+  image: ghcr.io/sohooo/moebius:vX.Y.Z
   tags:
     - k8s
   variables:
