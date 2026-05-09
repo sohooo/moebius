@@ -49,3 +49,28 @@ func TestReleaseWorkflowSmokeTestCoversContainerContract(t *testing.T) {
 		}
 	}
 }
+
+func TestDockerfileKeepsCIImageRuntimeContract(t *testing.T) {
+	data, err := os.ReadFile("Dockerfile")
+	if err != nil {
+		t.Fatalf("read Dockerfile: %v", err)
+	}
+	content := string(data)
+	required := []string{
+		"FROM golang:1.25-alpine AS build",
+		"FROM alpine:3.22",
+		"RUN apk add --no-cache ca-certificates git",
+		"COPY --from=build /out/mobius /usr/local/bin/mobius",
+		"RUN ln -s /usr/local/bin/mobius /usr/local/bin/møbius",
+		`ENTRYPOINT ["/usr/local/bin/møbius"]`,
+		`CMD ["diff"]`,
+	}
+	for _, needle := range required {
+		if !strings.Contains(content, needle) {
+			t.Fatalf("Dockerfile is missing %q", needle)
+		}
+	}
+	if strings.Contains(content, "FROM scratch") || strings.Contains(content, "distroless") {
+		t.Fatal("Dockerfile must keep a shell-capable Alpine runtime for GitLab CI scripts")
+	}
+}
