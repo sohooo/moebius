@@ -2,7 +2,6 @@
 package report
 
 import (
-	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -174,115 +173,6 @@ func prepareBaselineCluster(repo *gitrepo.Repo, mergeBase *object.Commit, layout
 		}
 	}
 	return nil
-}
-
-func renderCluster(root string, layout config.LayoutConfig, cluster, state, outputRoot string, renderer *helmrender.Renderer, mode cli.RenderErrorMode, duplicateKeyMode cli.DuplicateKeyMode) error {
-	appsPath := config.AppsPath(root, layout, cluster)
-	if !fileExists(appsPath) {
-		return nil
-	}
-	releases, err := config.LoadReleases(root, layout, cluster)
-	if err != nil {
-		return err
-	}
-	clusterDir := filepath.Join(outputRoot, cluster)
-	if err := os.MkdirAll(clusterDir, 0o755); err != nil {
-		return err
-	}
-
-	for _, release := range releases {
-		overridePath := config.ResolveOverridePath(root, layout, cluster, release)
-		if !fileExists(overridePath) {
-			overridePath = ""
-		}
-		chartRef := release.ChartReference()
-		rendered, err := renderer.Render(root, chartRef, release.RepoURL, release.TargetRevision, release.Name, release.Namespace, overridePath)
-		if err != nil {
-			if warning, ok := missingVersionRenderWarning(cluster, release, chartRef, err); ok {
-				if writeErr := writeArtifactMessage(filepath.Join(filepath.Dir(outputRoot), "warnings"), state, cluster, release.Name, []string{warning}); writeErr != nil {
-					return writeErr
-				}
-				if mode == cli.RenderErrorModeWarnSkipRelease {
-					chartDir := filepath.Join(clusterDir, release.Name)
-					if err := os.MkdirAll(chartDir, 0o755); err != nil {
-						return err
-					}
-					if err := os.WriteFile(filepath.Join(chartDir, "namespace.txt"), []byte(release.Namespace+"\n"), 0o644); err != nil {
-						return err
-					}
-					if err := os.WriteFile(filepath.Join(chartDir, renderWarningFilename), []byte(warning+"\n"), 0o644); err != nil {
-						return err
-					}
-					continue
-				}
-			}
-			return fmt.Errorf("render cluster %q release %q: %w", cluster, release.Name, err)
-		}
-
-		chartDir := filepath.Join(clusterDir, release.Name)
-		resourceDir := filepath.Join(chartDir, "resources")
-		if err := os.MkdirAll(resourceDir, 0o755); err != nil {
-			return err
-		}
-		if err := os.WriteFile(filepath.Join(chartDir, "namespace.txt"), []byte(release.Namespace+"\n"), 0o644); err != nil {
-			return err
-		}
-		renderedPath := filepath.Join(chartDir, "rendered.yaml")
-		if err := os.WriteFile(renderedPath, []byte(rendered), 0o644); err != nil {
-			return err
-		}
-		_, notices, err := resources.SplitRendered(rendered, resourceDir, resources.SplitOptions{
-			DuplicateKeyMode: optsDuplicateMode(duplicateKeyMode),
-		})
-		if err != nil {
-			message := fmt.Sprintf("cluster %q release %q chart %q produced invalid %s rendered YAML (rendered manifest: %s): %v", cluster, release.Name, chartRef, state, renderedPath, err)
-			if writeErr := writeArtifactMessage(filepath.Join(filepath.Dir(outputRoot), "errors"), state, cluster, release.Name, []string{message}); writeErr != nil {
-				return writeErr
-			}
-			if mode == cli.RenderErrorModeWarnSkipRelease {
-				if err := os.WriteFile(filepath.Join(chartDir, renderWarningFilename), []byte(message+"\n"), 0o644); err != nil {
-					return err
-				}
-				continue
-			}
-			return fmt.Errorf("%s", message)
-		}
-		if len(notices) > 0 {
-			lines := make([]string, 0, len(notices))
-			for _, notice := range notices {
-				lines = append(lines, fmt.Sprintf("cluster %q release %q chart %q %s render warning: %s", cluster, release.Name, chartRef, state, notice))
-			}
-			if err := os.WriteFile(filepath.Join(chartDir, renderNoticeFilename), []byte(strings.Join(lines, "\n")+"\n"), 0o644); err != nil {
-				return err
-			}
-			if err := writeArtifactMessage(filepath.Join(filepath.Dir(outputRoot), "warnings"), state, cluster, release.Name, lines); err != nil {
-				return err
-			}
-		}
-	}
-	return nil
-}
-
-func missingVersionRenderWarning(cluster string, release config.Release, chartRef string, err error) (string, bool) {
-	var versionErr *helmrender.MissingVersionError
-	if !helmrender.IsMissingVersionError(err) {
-		return "", false
-	}
-	if !errors.As(err, &versionErr) || versionErr == nil {
-		return "", false
-	}
-	message := fmt.Sprintf(
-		"cluster %q release %q chart %q requested chart version %q is unavailable",
-		cluster,
-		release.Name,
-		chartRef,
-		versionErr.TargetRevision,
-	)
-	if versionErr.RepoURL != "" {
-		message += fmt.Sprintf(" (repo %q)", versionErr.RepoURL)
-	}
-	message += fmt.Sprintf(": %v", versionErr.Unwrap())
-	return message, true
 }
 
 func compareCluster(cluster, baselineOutput, currentOutput, diffOutput string, contextLines int, doValidate bool, baselineReleases map[string]config.Release, currentReleases map[string]config.Release) (output.ClusterReport, error) {
@@ -483,13 +373,6 @@ func readLines(path string) []string {
 		out = append(out, line)
 	}
 	return out
-}
-
-func optsDuplicateMode(mode cli.DuplicateKeyMode) resources.DuplicateKeyMode {
-	if mode == cli.DuplicateKeyModeWarnLastWins {
-		return resources.DuplicateKeyModeWarnLastWins
-	}
-	return resources.DuplicateKeyModeError
 }
 
 func unionKeys(left, right map[string]resources.Resource) []string {
