@@ -33,4 +33,5 @@ RUN apk add --no-cache ca-certificates git
 COPY --from=build /out/mobius /usr/local/bin/mobius
 RUN ln -s /usr/local/bin/mobius /usr/local/bin/møbius
 
-CMD ["mobius"]
+ENTRYPOINT ["/usr/local/bin/møbius"]
+CMD ["diff"]
