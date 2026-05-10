@@ -1,12 +1,13 @@
 sources:
   - component: kubernetes
-    version: v1
+    version: latest
     source_type: url
+    repo: kubernetes/kubernetes
     urls:
-      - https://raw.githubusercontent.com/yannh/kubernetes-json-schema/master/v1.33.2-standalone-strict/deployment-apps-v1.json
-      - https://raw.githubusercontent.com/yannh/kubernetes-json-schema/master/v1.33.2-standalone-strict/job-batch-v1.json
-      - https://raw.githubusercontent.com/yannh/kubernetes-json-schema/master/v1.33.2-standalone-strict/service-v1.json
-      - https://raw.githubusercontent.com/yannh/kubernetes-json-schema/master/v1.33.2-standalone-strict/ingress-networking-v1.json
+      - https://raw.githubusercontent.com/yannh/kubernetes-json-schema/master/{version}-standalone-strict/deployment-apps-v1.json
+      - https://raw.githubusercontent.com/yannh/kubernetes-json-schema/master/{version}-standalone-strict/job-batch-v1.json
+      - https://raw.githubusercontent.com/yannh/kubernetes-json-schema/master/{version}-standalone-strict/service-v1.json
+      - https://raw.githubusercontent.com/yannh/kubernetes-json-schema/master/{version}-standalone-strict/ingress-networking-v1.json
     note: Pinned Kubernetes built-in schemas matching the current API dependency.
 
   - component: cloudnative-pg

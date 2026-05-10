@@ -116,6 +116,66 @@ sources:
 	}
 }
 
+func TestLoadManifest_RequiresRepoForLatestURLSources(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	writeFile(t, filepath.Join(root, "schemasources.yaml"), `
+sources:
+  - component: demo
+    version: latest
+    source_type: url
+    urls:
+      - https://schemas.example.invalid/{version}/demo.yaml
+`)
+
+	_, err := loadManifest(filepath.Join(root, "schemasources.yaml"))
+	if err == nil {
+		t.Fatal("expected latest URL source without repo to be rejected")
+	}
+}
+
+func TestLatestPlainSemverTagIgnoresSchemaVariantTags(t *testing.T) {
+	t.Parallel()
+
+	got, ok := latestPlainSemverTag([]githubTag{
+		{Name: "v1.15-v1.18"},
+		{Name: "v1.36.0-standalone-strict"},
+		{Name: "v1.35.4"},
+		{Name: "v1.36.0-rc.0"},
+		{Name: "v1.36.0"},
+	})
+	if !ok {
+		t.Fatal("expected a latest tag")
+	}
+	if want := "v1.36.0"; got != want {
+		t.Fatalf("unexpected latest tag %q want %q", got, want)
+	}
+}
+
+func TestLatestPlainSemverTagAcceptsDirectoryNames(t *testing.T) {
+	t.Parallel()
+
+	items := []githubContent{
+		{Name: "master-standalone-strict", Type: "dir"},
+		{Name: "v1.35.4", Type: "dir"},
+		{Name: "v1.36.0", Type: "dir"},
+	}
+	tags := make([]githubTag, 0, len(items))
+	for _, item := range items {
+		if item.Type == "dir" {
+			tags = append(tags, githubTag{Name: item.Name})
+		}
+	}
+	got, ok := latestPlainSemverTag(tags)
+	if !ok {
+		t.Fatal("expected a latest tag")
+	}
+	if want := "v1.36.0"; got != want {
+		t.Fatalf("unexpected latest tag %q want %q", got, want)
+	}
+}
+
 func TestLoadManifest_AllowsGitHubReleaseSources(t *testing.T) {
 	t.Parallel()
 

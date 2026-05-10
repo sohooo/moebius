@@ -124,6 +124,9 @@ func validateSource(source schemaSource) error {
 		if len(source.URLs) == 0 {
 			return fmt.Errorf("schema source %s is missing urls", source.Component)
 		}
+		if source.Version == "latest" && strings.TrimSpace(source.Repo) == "" {
+			return fmt.Errorf("schema source %s must set repo when url version is latest", source.Component)
+		}
 	case "github_release":
 		if strings.TrimSpace(source.Repo) == "" {
 			return fmt.Errorf("schema source %s is missing repo", source.Component)

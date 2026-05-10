@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strings"
 
@@ -20,6 +21,17 @@ type sourceDocument struct {
 	Name string
 	Data []byte
 }
+
+type githubTag struct {
+	Name string `json:"name"`
+}
+
+type githubContent struct {
+	Name string `json:"name"`
+	Type string `json:"type"`
+}
+
+var plainSemverTag = regexp.MustCompile(`^v?[0-9]+\.[0-9]+\.[0-9]+$`)
 
 func loadSourceDocuments(root string, source schemaSource, existingLock schemaLock, verify bool) ([]sourceDocument, lockedSource, error) {
 	switch source.SourceType {
@@ -32,18 +44,38 @@ func loadSourceDocuments(root string, source schemaSource, existingLock schemaLo
 			ResolvedVersion: source.Version,
 		}, err
 	case "url":
-		docs, err := loadURLSourceDocuments(source.URLs)
-		return docs, lockedSource{
-			Component:       source.Component,
-			SourceType:      source.SourceType,
-			Version:         source.Version,
-			ResolvedVersion: source.Version,
-		}, err
+		return loadURLSourceDocumentsForSource(source, existingLock, verify)
 	case "github_release":
 		return loadGitHubReleaseSourceDocuments(root, source, existingLock, verify)
 	default:
 		return nil, lockedSource{}, fmt.Errorf("unsupported source type %q", source.SourceType)
 	}
+}
+
+func loadURLSourceDocumentsForSource(source schemaSource, existingLock schemaLock, verify bool) ([]sourceDocument, lockedSource, error) {
+	resolvedVersion := source.Version
+	if verify && source.Version == "latest" {
+		locked, ok := findLockedSource(existingLock, source)
+		if !ok {
+			return nil, lockedSource{}, fmt.Errorf("missing lock entry for %s; run cmd/schema-sync", source.Component)
+		}
+		resolvedVersion = locked.ResolvedVersion
+	} else if source.Version == "latest" {
+		var err error
+		resolvedVersion, err = resolveLatestGitHubRelease(source.Repo)
+		if err != nil {
+			return nil, lockedSource{}, err
+		}
+	}
+
+	docs, err := loadURLSourceDocuments(expandPatterns(source.URLs, resolvedVersion))
+	return docs, lockedSource{
+		Component:       source.Component,
+		SourceType:      source.SourceType,
+		Version:         source.Version,
+		ResolvedVersion: resolvedVersion,
+		Repo:            source.Repo,
+	}, err
 }
 
 func loadFileSourceDocuments(root string, patterns []string) ([]sourceDocument, error) {
@@ -223,7 +255,67 @@ func resolveLatestGitHubRelease(repo string) (string, error) {
 }
 
 func resolveLatestGitHubTag(repo string) (string, error) {
-	apiURL := fmt.Sprintf("https://api.github.com/repos/%s/tags?per_page=100", repo)
+	client := &http.Client{}
+
+	var allTags []githubTag
+	for page := 1; ; page++ {
+		apiURL := fmt.Sprintf("https://api.github.com/repos/%s/tags?per_page=100&page=%d", repo, page)
+		req, err := http.NewRequest(http.MethodGet, apiURL, nil)
+		if err != nil {
+			return "", err
+		}
+		req.Header.Set("Accept", "application/vnd.github+json")
+		req.Header.Set("User-Agent", "mobius-schema-sync")
+		resp, err := client.Do(req)
+		if err != nil {
+			return "", err
+		}
+		if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+			resp.Body.Close()
+			return "", fmt.Errorf("resolve latest tag for %s: unexpected status %s", repo, resp.Status)
+		}
+		var payload []githubTag
+		err = json.NewDecoder(resp.Body).Decode(&payload)
+		resp.Body.Close()
+		if err != nil {
+			return "", err
+		}
+		allTags = append(allTags, payload...)
+		if len(payload) < 100 {
+			break
+		}
+	}
+	best, ok := latestPlainSemverTag(allTags)
+	if !ok {
+		return resolveLatestGitHubDirectory(repo)
+	}
+	return best, nil
+}
+
+func latestPlainSemverTag(payload []githubTag) (string, bool) {
+	var best string
+	var bestVersion *semver.Version
+	for _, item := range payload {
+		if strings.TrimSpace(item.Name) == "" {
+			continue
+		}
+		if !plainSemverTag.MatchString(item.Name) {
+			continue
+		}
+		candidateVersion, err := semver.NewVersion(strings.TrimPrefix(item.Name, "v"))
+		if err != nil {
+			continue
+		}
+		if bestVersion == nil || candidateVersion.GreaterThan(bestVersion) {
+			best = item.Name
+			bestVersion = candidateVersion
+		}
+	}
+	return best, bestVersion != nil
+}
+
+func resolveLatestGitHubDirectory(repo string) (string, error) {
+	apiURL := fmt.Sprintf("https://api.github.com/repos/%s/contents", repo)
 	client := &http.Client{}
 	req, err := http.NewRequest(http.MethodGet, apiURL, nil)
 	if err != nil {
@@ -237,34 +329,22 @@ func resolveLatestGitHubTag(repo string) (string, error) {
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return "", fmt.Errorf("resolve latest tag for %s: unexpected status %s", repo, resp.Status)
+		return "", fmt.Errorf("resolve latest directory for %s: unexpected status %s", repo, resp.Status)
 	}
-	var payload []struct {
-		Name string `json:"name"`
-	}
+	var payload []githubContent
 	if err := json.NewDecoder(resp.Body).Decode(&payload); err != nil {
 		return "", err
 	}
-	if len(payload) == 0 {
-		return "", fmt.Errorf("resolve latest tag for %s: no tags found", repo)
+	tags := make([]githubTag, 0, len(payload))
+	for _, item := range payload {
+		if item.Type != "dir" {
+			continue
+		}
+		tags = append(tags, githubTag{Name: item.Name})
 	}
-	best := payload[0].Name
-	bestVersion, _ := semver.NewVersion(strings.TrimPrefix(best, "v"))
-	for _, item := range payload[1:] {
-		if strings.TrimSpace(item.Name) == "" {
-			continue
-		}
-		candidateVersion, err := semver.NewVersion(strings.TrimPrefix(item.Name, "v"))
-		if err != nil {
-			if bestVersion == nil && item.Name > best {
-				best = item.Name
-			}
-			continue
-		}
-		if bestVersion == nil || candidateVersion.GreaterThan(bestVersion) {
-			best = item.Name
-			bestVersion = candidateVersion
-		}
+	best, ok := latestPlainSemverTag(tags)
+	if !ok {
+		return "", fmt.Errorf("resolve latest directory for %s: no version directories found", repo)
 	}
 	return best, nil
 }
