@@ -39,9 +39,24 @@ func TestReleaseWorkflowSmokeTestCoversContainerContract(t *testing.T) {
 	content := string(data)
 	required := []string{
 		"FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true",
+		"permissions:\n  contents: write\n  packages: write",
+		"permissions:\n      contents: read\n      packages: write",
+		"uses: docker/setup-qemu-action@v3",
+		"uses: docker/setup-buildx-action@v3",
+		"uses: docker/login-action@v3",
+		"registry: ghcr.io",
 		"docker run --rm mobius:test version",
 		"docker run --rm mobius:test diff --help >/dev/null",
 		"docker run --rm --entrypoint sh mobius:test -ec 'command -v git && command -v mobius && command -v møbius'",
+		"uses: docker/build-push-action@v6",
+		"platforms: linux/amd64,linux/arm64",
+		"tags: ghcr.io/sohooo/moebius:${{ github.ref_name }}",
+		"org.opencontainers.image.created=${{ steps.meta.outputs.build_date }}",
+		"org.opencontainers.image.revision=${{ github.sha }}",
+		"org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}",
+		"org.opencontainers.image.version=${{ github.ref_name }}",
+		"cache-from: type=gha",
+		"cache-to: type=gha,mode=max",
 	}
 	for _, needle := range required {
 		if !strings.Contains(content, needle) {
