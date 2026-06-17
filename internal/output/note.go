@@ -78,8 +78,6 @@ func renderClusterComment(report ClusterReport, mode diff.Mode, opts NoteRenderO
 		return strings.TrimRight(b.String(), "\n"), nil
 	}
 
-	fmt.Fprintf(&b, "Charts with changes: %d\n\n", len(report.Charts))
-
 	for _, chart := range report.Charts {
 		added, removed, changed := chartChangeCounts(chart)
 		if opts.target == renderTargetNote {
@@ -188,7 +186,16 @@ func renderCommentTOC(b *strings.Builder, reports []ClusterReport, target render
 		if target == renderTargetDescription {
 			anchor = descriptionAnchor(descriptionClusterHeading(report.Name))
 		}
-		fmt.Fprintf(b, "- [%s](#%s) · added %d · removed %d · changed %d\n", report.Name, anchor, report.Added, report.Removed, report.Changed)
+		parts := []string{
+			fmt.Sprintf("[%s](#%s)", report.Name, anchor),
+			fmt.Sprintf("added %d", report.Added),
+			fmt.Sprintf("removed %d", report.Removed),
+			fmt.Sprintf("changed %d", report.Changed),
+		}
+		if summary := formatSeveritySummaryIcons(clusterSeverityCounts(report)); summary != "" {
+			parts = append(parts, "severity: "+summary)
+		}
+		fmt.Fprintf(b, "- %s\n", strings.Join(parts, " · "))
 	}
 }
 

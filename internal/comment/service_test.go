@@ -146,7 +146,7 @@ func TestServicePost_AppendsDescriptionBlockByDefault(t *testing.T) {
 	if !strings.HasPrefix(client.updatedDescription, "Original MR description.\n\n"+descriptionStartMarker) {
 		t.Fatalf("expected managed block appended after existing description:\n%s", client.updatedDescription)
 	}
-	if !strings.Contains(client.updatedDescription, "## mobius cluster kube-bravo") {
+	if !strings.Contains(client.updatedDescription, "## :computer: kube-bravo") {
 		t.Fatalf("expected description report heading:\n%s", client.updatedDescription)
 	}
 	if client.createdBody != "" {

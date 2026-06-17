@@ -191,7 +191,7 @@ func TestRenderCommentBody_UsesUniqueResourceAnchorsAcrossClusters(t *testing.T)
 	}
 }
 
-func TestRenderDescriptionBody_UsesMobiusHeadingsAndLinks(t *testing.T) {
+func TestRenderDescriptionBody_UsesEmojiHeadingsAndStableLinks(t *testing.T) {
 	body, err := RenderDescriptionBodyWithOptions([]ClusterReport{sampleClusterReport()}, diff.ModeSemantic, NoteMetadata{CommitSHA: "deadbeef"}, NoteRenderOptions{
 		Mode:   cli.CommentModeFull,
 		Status: "changes detected",
@@ -202,20 +202,26 @@ func TestRenderDescriptionBody_UsesMobiusHeadingsAndLinks(t *testing.T) {
 	if strings.Contains(body, `<a id=`) {
 		t.Fatalf("description body must not contain custom anchor tags:\n%s", body)
 	}
-	if !strings.Contains(body, "[kube-bravo](#user-content-mobius-cluster-kube-bravo)") {
-		t.Fatalf("expected mobius cluster navigation link:\n%s", body)
+	if !strings.Contains(body, "[kube-bravo](#user-content-computer-kube-bravo)") {
+		t.Fatalf("expected emoji cluster navigation link:\n%s", body)
 	}
-	if !strings.Contains(body, "[`Deployment/hello-world`](#user-content-mobius-resource-kube-bravo--hello-world--demodeployment-hello-world)") {
-		t.Fatalf("expected mobius resource highlight link:\n%s", body)
+	if !strings.Contains(body, "[`Deployment/hello-world`](#user-content-kube-bravo-hello-world-demodeployment-hello-world)") {
+		t.Fatalf("expected resource highlight link:\n%s", body)
 	}
-	if !strings.Contains(body, "## mobius cluster kube-bravo") {
-		t.Fatalf("expected mobius cluster heading:\n%s", body)
+	if !strings.Contains(body, "## :computer: kube-bravo") {
+		t.Fatalf("expected emoji cluster heading:\n%s", body)
 	}
-	if !strings.Contains(body, "### mobius chart kube-bravo hello-world") {
-		t.Fatalf("expected mobius chart heading:\n%s", body)
+	if !strings.Contains(body, "### :package: kube-bravo hello-world") {
+		t.Fatalf("expected emoji chart heading:\n%s", body)
 	}
-	if !strings.Contains(body, "#### mobius resource `kube-bravo` · hello-world · demo/Deployment hello-world") {
-		t.Fatalf("expected mobius resource heading:\n%s", body)
+	if !strings.Contains(body, "#### `kube-bravo` · hello-world · demo/Deployment hello-world") {
+		t.Fatalf("expected resource heading without mobius prefix:\n%s", body)
+	}
+	if strings.Contains(body, "mobius cluster") || strings.Contains(body, "mobius chart") || strings.Contains(body, "mobius resource") {
+		t.Fatalf("description body must not contain old mobius heading prefixes:\n%s", body)
+	}
+	if strings.Contains(body, "Charts with changes:") {
+		t.Fatalf("description body must not contain redundant chart count line:\n%s", body)
 	}
 	if strings.Contains(body, "**Resource:**") {
 		t.Fatalf("description body must not contain redundant resource line:\n%s", body)
@@ -223,7 +229,7 @@ func TestRenderDescriptionBody_UsesMobiusHeadingsAndLinks(t *testing.T) {
 	if !strings.Contains(body, "- changed · severity 🟠 high") {
 		t.Fatalf("expected resource metadata bullet with severity badge:\n%s", body)
 	}
-	if !strings.Contains(body, "- changed · severity 🟠 high · validation: validated via embedded · [up](#user-content-mobius-chart-kube-bravo-hello-world)") {
+	if !strings.Contains(body, "- changed · severity 🟠 high · validation: validated via embedded · [up](#user-content-package-kube-bravo-hello-world)") {
 		t.Fatalf("expected resource metadata bullet with chart backlink:\n%s", body)
 	}
 	if strings.Contains(body, "#møbius") || strings.Contains(body, "## møbius") || strings.Contains(body, "### møbius") || strings.Contains(body, "#### møbius") {
@@ -244,17 +250,20 @@ func TestRenderDescriptionBody_UsesMobiusHeadingsAndLinks(t *testing.T) {
 	if !strings.Contains(body, "| **Severity** | 🔴 critical 1 · 🟠 high 1 |") {
 		t.Fatalf("expected severity summary badges:\n%s", body)
 	}
-	if !strings.Contains(body, "[`ClusterRole/hello-world`](#user-content-mobius-resource-kube-bravo--hello-world--clusterrole-hello-world)") {
+	if !strings.Contains(body, "[`ClusterRole/hello-world`](#user-content-kube-bravo-hello-world-clusterrole-hello-world)") {
 		t.Fatalf("expected empty namespace resource link to preserve GitLab heading slug:\n%s", body)
 	}
-	if strings.Contains(body, "#user-content-mobius-resource-kube-bravo-hello-world-none-clusterrole-hello-world") {
+	if strings.Contains(body, "#user-content-kube-bravo-hello-world-none-clusterrole-hello-world") {
 		t.Fatalf("empty namespace resource links must not inject none:\n%s", body)
 	}
 	if !strings.Contains(body, "**Changes**") {
 		t.Fatalf("expected chart changes section:\n%s", body)
 	}
-	if !strings.Contains(body, "- 🔴 [`ClusterRole/hello-world`](#user-content-mobius-resource-kube-bravo--hello-world--clusterrole-hello-world) **critical** · RBAC rules changed at `rules`") {
-		t.Fatalf("expected linked chart changes with severity badge and bold severity:\n%s", body)
+	if !strings.Contains(body, "- 🔴 [`ClusterRole/hello-world`](#user-content-kube-bravo-hello-world-clusterrole-hello-world) · RBAC rules changed at `rules`") {
+		t.Fatalf("expected linked chart changes with severity icon only:\n%s", body)
+	}
+	if strings.Contains(body, "**critical**") || strings.Contains(body, "**high**") {
+		t.Fatalf("chart changes must not duplicate severity words:\n%s", body)
 	}
 }
 
@@ -330,8 +339,8 @@ func TestRenderDescriptionBody_ResourceLinksIncludeChartAndNamespace(t *testing.
 	if err != nil {
 		t.Fatalf("RenderDescriptionBodyWithOptions returned error: %v", err)
 	}
-	firstAnchor := "#user-content-mobius-resource-kube-bravo--hello-world--demodeployment-hello-world"
-	secondAnchor := "#user-content-mobius-resource-kube-bravo--other-chart--otherdeployment-hello-world"
+	firstAnchor := "#user-content-kube-bravo-hello-world-demodeployment-hello-world"
+	secondAnchor := "#user-content-kube-bravo-other-chart-otherdeployment-hello-world"
 	if !strings.Contains(body, firstAnchor) || !strings.Contains(body, secondAnchor) {
 		t.Fatalf("expected resource anchors to include chart and namespace:\n%s", body)
 	}
@@ -367,14 +376,14 @@ func TestRenderDescriptionBody_IgnoresDotsInGitLabResourceAnchors(t *testing.T) 
 	if err != nil {
 		t.Fatalf("RenderDescriptionBodyWithOptions returned error: %v", err)
 	}
-	want := "#user-content-mobius-resource-kube-bravo--spawn--customresourcedefinition-clustermetadatacoreexamplecom"
+	want := "#user-content-kube-bravo-spawn-customresourcedefinition-clustermetadatacoreexamplecom"
 	if !strings.Contains(body, want) {
 		t.Fatalf("expected dotted CRD anchor to ignore dots:\n%s", body)
 	}
 	if strings.Contains(body, "clustermetadata-core-example-com") {
 		t.Fatalf("dotted CRD anchor must not convert dots to dashes:\n%s", body)
 	}
-	if !strings.Contains(body, "#### mobius resource `kube-bravo` · spawn · /CustomResourceDefinition clustermetadata.core.example.com") {
+	if !strings.Contains(body, "#### `kube-bravo` · spawn · /CustomResourceDefinition clustermetadata.core.example.com") {
 		t.Fatalf("expected readable CRD resource heading:\n%s", body)
 	}
 }

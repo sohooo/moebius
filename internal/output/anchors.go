@@ -32,15 +32,15 @@ func resourceLinkAnchor(cluster, chart string, resource ResourceReport, target r
 }
 
 func descriptionClusterHeading(cluster string) string {
-	return fmt.Sprintf("mobius cluster %s", cluster)
+	return fmt.Sprintf(":computer: %s", cluster)
 }
 
 func descriptionChartHeading(cluster, chart string) string {
-	return fmt.Sprintf("mobius chart %s %s", cluster, chart)
+	return fmt.Sprintf(":package: %s %s", cluster, chart)
 }
 
 func descriptionResourceHeading(cluster, chart, namespace, kind, name string) string {
-	return fmt.Sprintf("mobius resource `%s` · %s · %s/%s %s", cluster, chart, namespace, kind, name)
+	return fmt.Sprintf("`%s` · %s · %s/%s %s", cluster, chart, namespace, kind, name)
 }
 
 func descriptionAnchor(heading string) string {
@@ -68,15 +68,20 @@ func anchorSlug(parts ...string) string {
 func gitlabHeadingSlug(heading string) string {
 	raw := strings.ToLower(heading)
 	var b strings.Builder
+	lastDash := false
 	for _, r := range raw {
 		if r == '.' || r == '`' || r == '·' || r == '/' {
 			continue
 		}
 		if (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') {
 			b.WriteRune(r)
+			lastDash = false
 			continue
 		}
-		b.WriteByte('-')
+		if !lastDash {
+			b.WriteByte('-')
+			lastDash = true
+		}
 	}
 	return strings.Trim(b.String(), "-")
 }

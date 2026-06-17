@@ -51,7 +51,7 @@ func collectChartResourceChanges(cluster string, chart ChartReport, target rende
 		if linkResources {
 			label = fmt.Sprintf("[%s](#%s)", label, resourceLinkAnchor(cluster, chart.Name, resource, target))
 		}
-		out = append(out, fmt.Sprintf("%s %s **%s** · %s", severityIcon(resource.Assessment.Level), label, resource.Assessment.Level, line))
+		out = append(out, fmt.Sprintf("%s %s · %s", severityIcon(resource.Assessment.Level), label, line))
 	}
 	return out
 }
@@ -124,6 +124,16 @@ func chartSeverityCounts(chart ChartReport) map[severity.Level]int {
 	counts := map[severity.Level]int{}
 	for _, resource := range chart.Resources {
 		counts[resource.Assessment.Level]++
+	}
+	return counts
+}
+
+func clusterSeverityCounts(report ClusterReport) map[severity.Level]int {
+	counts := map[severity.Level]int{}
+	for _, chart := range report.Charts {
+		for level, count := range chartSeverityCounts(chart) {
+			counts[level] += count
+		}
 	}
 	return counts
 }
@@ -290,10 +300,8 @@ func chartSummaryLine(chart ChartReport, added, removed, changed int) string {
 	}
 	parts = append(parts,
 		fmt.Sprintf("namespace `%s`", emptyToNone(chart.Namespace)),
-		fmt.Sprintf("severity `%s`", chartSeverity(chart)),
-		fmt.Sprintf("added %d", added),
-		fmt.Sprintf("removed %d", removed),
-		fmt.Sprintf("changed %d", changed),
+		fmt.Sprintf("severity %s", severityIcon(chartSeverity(chart))),
+		formatChangeMix(added, removed, changed),
 	)
 	return strings.Join(parts, " · ")
 }
@@ -350,6 +358,24 @@ func formatSeveritySummaryWithBadges(counts map[severity.Level]int) string {
 			continue
 		}
 		parts = append(parts, fmt.Sprintf("%s %d", severityBadge(level), counts[level]))
+	}
+	return strings.Join(parts, " · ")
+}
+
+func formatSeveritySummaryIcons(counts map[severity.Level]int) string {
+	order := []severity.Level{
+		severity.LevelCritical,
+		severity.LevelHigh,
+		severity.LevelMedium,
+		severity.LevelLow,
+		severity.LevelInfo,
+	}
+	var parts []string
+	for _, level := range order {
+		if counts[level] == 0 {
+			continue
+		}
+		parts = append(parts, fmt.Sprintf("%s %d", severityIcon(level), counts[level]))
 	}
 	return strings.Join(parts, " · ")
 }

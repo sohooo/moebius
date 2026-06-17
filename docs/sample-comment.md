@@ -6,16 +6,14 @@
 
 **Navigation**
 
-- [kube-bravo](#cluster-kube-bravo) · added 0 · removed 0 · changed 1
+- [kube-bravo](#cluster-kube-bravo) · added 0 · removed 0 · changed 1 · severity: 🟠 1
 
 <a id="cluster-kube-bravo"></a>
 ## Cluster `kube-bravo`
 
-Charts with changes: 1
-
 <a id="chart-kube-bravo-hello-world"></a>
 <details>
-<summary>Chart `hello-world` · namespace `hello-world` · severity `high` · added 0 · removed 0 · changed 1</summary>
+<summary>Chart `hello-world` · namespace `hello-world` · severity 🟠 · +0 · -0 · ~1</summary>
 
 | Signal | Details |
 | --- | --- |
@@ -28,7 +26,7 @@ Charts with changes: 1
 | **Validation** | 0 errors · 0 warnings · 0 unvalidated |
 
 **Changes**
-- 🟠 [`Deployment/hello-world`](#resource-kube-bravo-deployment-hello-world) **high** · replicas changed 2 -> 3
+- 🟠 [`Deployment/hello-world`](#resource-kube-bravo-deployment-hello-world) · replicas changed 2 -> 3
 
 <a id="resource-kube-bravo-deployment-hello-world"></a>
 #### Resource `kube-bravo · Deployment/hello-world` (changed, severity: high)
