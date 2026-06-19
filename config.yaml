@@ -5,10 +5,12 @@ layout:
   clusters_dir: clusters
 
   apps:
-    # File name inside each cluster directory that defines releases.
-    file: apps.yaml
+    # File names inside each cluster directory that define releases.
+    # Earlier files have precedence over later files.
+    files:
+      - apps.yaml
 
-    # møbius currently expects this file to be a top-level YAML list of objects.
+    # møbius currently expects each file to be a top-level YAML list of objects.
     kind: list
 
     fields:

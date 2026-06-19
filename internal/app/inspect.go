@@ -49,6 +49,9 @@ func inspectRepo(opts cli.Options) (repoContext, error) {
 	}
 	layout := cfg.Layout
 	layout.ClustersDir = cfg.EffectiveClustersDir(opts.ClustersDir)
+	if len(opts.AppsFiles) > 0 {
+		layout.Apps.Files = opts.AppsFiles
+	}
 
 	head, err := repo.ResolveCommit("HEAD")
 	if err != nil {
@@ -58,11 +61,11 @@ func inspectRepo(opts cli.Options) (repoContext, error) {
 	if err != nil {
 		return repoContext{}, err
 	}
-	currentClusters, err := repo.AllClusters(layout.ClustersDir, layout.Apps.File)
+	currentClusters, err := repo.AllClustersForAppsFiles(layout.ClustersDir, layout.Apps.Files)
 	if err != nil {
 		return repoContext{}, err
 	}
-	baselineClusters, err := repo.AllClustersAtCommit(baseRef, layout.ClustersDir, layout.Apps.File)
+	baselineClusters, err := repo.AllClustersAtCommitForAppsFiles(baseRef, layout.ClustersDir, layout.Apps.Files)
 	if err != nil {
 		return repoContext{}, err
 	}
@@ -73,9 +76,9 @@ func inspectRepo(opts cli.Options) (repoContext, error) {
 	available := unionStrings(currentClusters, baselineClusters)
 	if opts.Cluster != "" && !containsString(available, opts.Cluster) {
 		if len(available) == 0 {
-			return repoContext{}, fmt.Errorf("cluster %q does not exist in the effective layout under %q", opts.Cluster, layout.ClustersDir)
+			return repoContext{}, fmt.Errorf("cluster %q does not exist in the effective layout under %q (apps files: %s)", opts.Cluster, layout.ClustersDir, config.AppsFilesSummary(layout))
 		}
-		return repoContext{}, fmt.Errorf("cluster %q does not exist in the effective layout under %q; available clusters: %s", opts.Cluster, layout.ClustersDir, strings.Join(available, ", "))
+		return repoContext{}, fmt.Errorf("cluster %q does not exist in the effective layout under %q (apps files: %s); available clusters: %s", opts.Cluster, layout.ClustersDir, config.AppsFilesSummary(layout), strings.Join(available, ", "))
 	}
 
 	return repoContext{
@@ -101,10 +104,10 @@ func runClusters(stdout io.Writer, opts cli.Options) error {
 		clusters = []string{opts.Cluster}
 	}
 	if len(clusters) == 0 {
-		fmt.Fprintf(stdout, "No clusters discovered under %s (apps file: %s)\n", ctx.EffectiveLayout.ClustersDir, ctx.EffectiveLayout.Apps.File)
+		fmt.Fprintf(stdout, "No clusters discovered under %s (apps files: %s)\n", ctx.EffectiveLayout.ClustersDir, config.AppsFilesSummary(ctx.EffectiveLayout))
 		return nil
 	}
-	fmt.Fprintf(stdout, "Clusters under %s (apps file: %s, base ref: %s)\n", ctx.EffectiveLayout.ClustersDir, ctx.EffectiveLayout.Apps.File, ctx.BaseRefName)
+	fmt.Fprintf(stdout, "Clusters under %s (apps files: %s, base ref: %s)\n", ctx.EffectiveLayout.ClustersDir, config.AppsFilesSummary(ctx.EffectiveLayout), ctx.BaseRefName)
 	for _, cluster := range clusters {
 		fmt.Fprintf(stdout, "- %s: current=%s baseline=%s changed=%s\n",
 			cluster,
@@ -128,7 +131,7 @@ func runDoctor(stdout io.Writer, opts cli.Options) error {
 	checks = append(checks,
 		doctorCheck{Level: "ok", Message: fmt.Sprintf("git repository found: %s", ctx.Root)},
 		doctorCheck{Level: "ok", Message: fmt.Sprintf("config loaded from %s", ctx.ConfigMeta.SourceSummary())},
-		doctorCheck{Level: "ok", Message: fmt.Sprintf("effective layout: clusters_dir=%s apps_file=%s override_path=%s fallback_path=%s", ctx.EffectiveLayout.ClustersDir, ctx.EffectiveLayout.Apps.File, ctx.EffectiveLayout.Overrides.Path, ctx.EffectiveLayout.Overrides.FallbackPath)},
+		doctorCheck{Level: "ok", Message: fmt.Sprintf("effective layout: clusters_dir=%s apps_files=%s override_path=%s fallback_path=%s", ctx.EffectiveLayout.ClustersDir, config.AppsFilesSummary(ctx.EffectiveLayout), ctx.EffectiveLayout.Overrides.Path, ctx.EffectiveLayout.Overrides.FallbackPath)},
 		doctorCheck{Level: "ok", Message: fmt.Sprintf("field mapping: name=%s namespace=%s project=%s repoURL=%s chart=%s targetRevision=%s", ctx.EffectiveLayout.Apps.Fields.Name, ctx.EffectiveLayout.Apps.Fields.Namespace, ctx.EffectiveLayout.Apps.Fields.Project, ctx.EffectiveLayout.Apps.Fields.RepoURL, ctx.EffectiveLayout.Apps.Fields.Chart, ctx.EffectiveLayout.Apps.Fields.TargetRevision)},
 		doctorCheck{Level: "ok", Message: fmt.Sprintf("base ref resolved to %s", ctx.BaseRefName)},
 	)

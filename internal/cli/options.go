@@ -6,6 +6,8 @@ import (
 	"flag"
 	"fmt"
 	"io"
+
+	"github.com/sohooo/moebius/internal/config"
 )
 
 type Command string
@@ -47,6 +49,7 @@ const (
 type Options struct {
 	Command          Command
 	ClustersDir      string
+	AppsFiles        []string
 	BaseRef          string
 	Cluster          string
 	AllClusters      bool
@@ -82,6 +85,14 @@ func Parse(args []string, stdout io.Writer) (Options, error) {
 	fs := flag.NewFlagSet("møbius", flag.ContinueOnError)
 	fs.SetOutput(stdout)
 	fs.StringVar(&opts.ClustersDir, "clusters-dir", opts.ClustersDir, "Override cluster definitions directory from config.yaml")
+	fs.Func("apps-files", "Comma-separated apps files relative to each cluster directory, in precedence order", func(v string) error {
+		files, err := config.ParseAppsFiles(v)
+		if err != nil {
+			return err
+		}
+		opts.AppsFiles = files
+		return nil
+	})
 	fs.StringVar(&opts.BaseRef, "base-ref", opts.BaseRef, "Base ref used for merge-base (default: origin/HEAD, then main, then master)")
 	fs.StringVar(&opts.Cluster, "cluster", "", "Render and compare a single cluster")
 	fs.BoolVar(&opts.AllClusters, "all-clusters", false, "Render and compare all clusters")

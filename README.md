@@ -110,7 +110,7 @@ Sample outputs:
 
 For each selected cluster, `møbius`:
 
-1. loads layout configuration from built-in defaults, optional `config.yaml`, optional `MOBIUS_CONFIG_YAML`, and targeted CLI overrides
+1. loads layout configuration from built-in defaults, optional `config.yaml`, optional `MOBIUS_CONFIG_YAML`, optional `MOBIUS_APPS_FILES`, and targeted CLI overrides
 2. resolves the merge-base with the configured base ref
 3. renders each release with the Helm Go SDK
 4. splits the rendered output into individual Kubernetes resources
@@ -124,7 +124,7 @@ flowchart TD
     B --> C["Resolve merge-base"]
     C --> D["Build baseline workspace"]
     C --> E["Use current worktree"]
-    D --> F["Load apps file"]
+    D --> F["Load apps files"]
     E --> F
     F --> G["Render Helm releases"]
     G --> H["Split into resources"]

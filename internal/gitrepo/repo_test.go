@@ -54,6 +54,49 @@ func TestAllClustersUsesConfiguredAppsFile(t *testing.T) {
 	}
 }
 
+func TestAllClustersUsesAnyConfiguredAppsFile(t *testing.T) {
+	root := t.TempDir()
+	repo := initRepoWithCommit(t, root, "clusters/kube-bravo/apps-dev.yaml", "- name: app\n  namespace: default\n  chart: charts/app\n")
+	_, _ = repo, root
+
+	r, err := Open(root)
+	if err != nil {
+		t.Fatalf("open repo: %v", err)
+	}
+	clusters, err := r.AllClustersForAppsFiles("clusters", []string{"apps.yaml", "apps-dev.yaml"})
+	if err != nil {
+		t.Fatalf("AllClustersForAppsFiles returned error: %v", err)
+	}
+	if len(clusters) != 1 || clusters[0] != "kube-bravo" {
+		t.Fatalf("unexpected clusters: %v", clusters)
+	}
+}
+
+func TestAllClustersAtCommitUsesAnyConfiguredAppsFile(t *testing.T) {
+	root := t.TempDir()
+	repo := initRepoWithCommit(t, root, "clusters/kube-bravo/apps-dev.yaml", "- name: app\n  namespace: default\n  chart: charts/app\n")
+	head, err := repo.Head()
+	if err != nil {
+		t.Fatalf("Head: %v", err)
+	}
+
+	r, err := Open(root)
+	if err != nil {
+		t.Fatalf("open repo: %v", err)
+	}
+	commit, err := repo.CommitObject(head.Hash())
+	if err != nil {
+		t.Fatalf("CommitObject: %v", err)
+	}
+	clusters, err := r.AllClustersAtCommitForAppsFiles(commit, "clusters", []string{"apps.yaml", "apps-dev.yaml"})
+	if err != nil {
+		t.Fatalf("AllClustersAtCommitForAppsFiles returned error: %v", err)
+	}
+	if len(clusters) != 1 || clusters[0] != "kube-bravo" {
+		t.Fatalf("unexpected clusters: %v", clusters)
+	}
+}
+
 func initRepoWithCommit(t *testing.T, root, path, contents string) *git.Repository {
 	t.Helper()
 	repo, err := git.PlainInit(root, false)

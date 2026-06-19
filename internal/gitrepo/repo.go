@@ -155,6 +155,10 @@ func (r *Repo) ChangedClusters(clustersDir string, base, head *object.Commit) ([
 }
 
 func (r *Repo) AllClusters(clustersDir, appsFile string) ([]string, error) {
+	return r.AllClustersForAppsFiles(clustersDir, []string{appsFile})
+}
+
+func (r *Repo) AllClustersForAppsFiles(clustersDir string, appsFiles []string) ([]string, error) {
 	root := filepath.Join(r.root, clustersDir)
 	entries, err := os.ReadDir(root)
 	if err != nil {
@@ -168,8 +172,11 @@ func (r *Repo) AllClusters(clustersDir, appsFile string) ([]string, error) {
 		if !entry.IsDir() {
 			continue
 		}
-		if _, err := os.Stat(filepath.Join(root, entry.Name(), filepath.FromSlash(appsFile))); err == nil {
-			clusters = append(clusters, entry.Name())
+		for _, appsFile := range appsFiles {
+			if _, err := os.Stat(filepath.Join(root, entry.Name(), filepath.FromSlash(appsFile))); err == nil {
+				clusters = append(clusters, entry.Name())
+				break
+			}
 		}
 	}
 	sort.Strings(clusters)
@@ -177,12 +184,19 @@ func (r *Repo) AllClusters(clustersDir, appsFile string) ([]string, error) {
 }
 
 func (r *Repo) AllClustersAtCommit(commit *object.Commit, clustersDir, appsFile string) ([]string, error) {
+	return r.AllClustersAtCommitForAppsFiles(commit, clustersDir, []string{appsFile})
+}
+
+func (r *Repo) AllClustersAtCommitForAppsFiles(commit *object.Commit, clustersDir string, appsFiles []string) ([]string, error) {
 	tree, err := commit.Tree()
 	if err != nil {
 		return nil, err
 	}
 	prefix := strings.TrimSuffix(filepath.ToSlash(clustersDir), "/") + "/"
-	appsFile = filepath.ToSlash(appsFile)
+	appsFileSet := map[string]struct{}{}
+	for _, appsFile := range appsFiles {
+		appsFileSet[filepath.ToSlash(appsFile)] = struct{}{}
+	}
 	set := map[string]struct{}{}
 	iter := tree.Files()
 	defer iter.Close()
@@ -195,7 +209,7 @@ func (r *Repo) AllClustersAtCommit(commit *object.Commit, clustersDir, appsFile 
 		if len(parts) != 2 || parts[0] == "" {
 			return nil
 		}
-		if parts[1] == appsFile {
+		if _, ok := appsFileSet[parts[1]]; ok {
 			set[parts[0]] = struct{}{}
 		}
 		return nil

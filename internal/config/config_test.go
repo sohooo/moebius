@@ -3,6 +3,7 @@ package config
 import (
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -10,6 +11,7 @@ import (
 func TestLoadRepoConfigUsesDefaultsWhenNoFileOrEnvIsPresent(t *testing.T) {
 	root := t.TempDir()
 	t.Setenv(EnvConfigYAML, "")
+	t.Setenv(EnvAppsFiles, "")
 
 	cfg, err := LoadRepoConfig(root)
 	if err != nil {
@@ -18,14 +20,15 @@ func TestLoadRepoConfigUsesDefaultsWhenNoFileOrEnvIsPresent(t *testing.T) {
 	if cfg.Layout.ClustersDir != "clusters" {
 		t.Fatalf("expected default clusters_dir, got %q", cfg.Layout.ClustersDir)
 	}
-	if cfg.Layout.Apps.File != "apps.yaml" {
-		t.Fatalf("expected default apps file, got %q", cfg.Layout.Apps.File)
+	if !slices.Equal(cfg.Layout.Apps.Files, []string{"apps.yaml"}) {
+		t.Fatalf("expected default apps files, got %v", cfg.Layout.Apps.Files)
 	}
 }
 
 func TestLoadRepoConfigReadsOptionalConfigFile(t *testing.T) {
 	root := t.TempDir()
 	t.Setenv(EnvConfigYAML, "")
+	t.Setenv(EnvAppsFiles, "")
 	writeFile(t, filepath.Join(root, "config.yaml"), "layout:\n  clusters_dir: custom-clusters\n")
 
 	cfg, err := LoadRepoConfig(root)
@@ -35,14 +38,45 @@ func TestLoadRepoConfigReadsOptionalConfigFile(t *testing.T) {
 	if cfg.Layout.ClustersDir != "custom-clusters" {
 		t.Fatalf("unexpected clusters_dir: %q", cfg.Layout.ClustersDir)
 	}
-	if cfg.Layout.Apps.File != "apps.yaml" {
-		t.Fatalf("expected default apps file, got %q", cfg.Layout.Apps.File)
+	if !slices.Equal(cfg.Layout.Apps.Files, []string{"apps.yaml"}) {
+		t.Fatalf("expected default apps files, got %v", cfg.Layout.Apps.Files)
+	}
+}
+
+func TestLoadRepoConfigReadsAppsFiles(t *testing.T) {
+	root := t.TempDir()
+	t.Setenv(EnvConfigYAML, "")
+	t.Setenv(EnvAppsFiles, "")
+	writeFile(t, filepath.Join(root, "config.yaml"), "layout:\n  apps:\n    files:\n      - apps.yaml\n      - apps-dev.yaml\n")
+
+	cfg, err := LoadRepoConfig(root)
+	if err != nil {
+		t.Fatalf("LoadRepoConfig returned error: %v", err)
+	}
+	if !slices.Equal(cfg.Layout.Apps.Files, []string{"apps.yaml", "apps-dev.yaml"}) {
+		t.Fatalf("unexpected apps files: %v", cfg.Layout.Apps.Files)
+	}
+}
+
+func TestLoadRepoConfigRejectsDeprecatedAppsFile(t *testing.T) {
+	root := t.TempDir()
+	t.Setenv(EnvConfigYAML, "")
+	t.Setenv(EnvAppsFiles, "")
+	writeFile(t, filepath.Join(root, "config.yaml"), "layout:\n  apps:\n    file: releases.yaml\n")
+
+	_, err := LoadRepoConfig(root)
+	if err == nil {
+		t.Fatal("expected deprecated apps file error")
+	}
+	if !strings.Contains(err.Error(), "layout.apps.file is no longer supported") {
+		t.Fatalf("unexpected error: %v", err)
 	}
 }
 
 func TestLoadRepoConfigReadsEnvYAMLWithoutFile(t *testing.T) {
 	root := t.TempDir()
 	t.Setenv(EnvConfigYAML, "layout:\n  clusters_dir: environments\n")
+	t.Setenv(EnvAppsFiles, "")
 
 	cfg, err := LoadRepoConfig(root)
 	if err != nil {
@@ -53,10 +87,32 @@ func TestLoadRepoConfigReadsEnvYAMLWithoutFile(t *testing.T) {
 	}
 }
 
+func TestLoadRepoConfigEnvAppsFilesOverridesConfig(t *testing.T) {
+	root := t.TempDir()
+	writeFile(t, filepath.Join(root, "config.yaml"), "layout:\n  apps:\n    files:\n      - apps.yaml\n")
+	t.Setenv(EnvConfigYAML, "")
+	t.Setenv(EnvAppsFiles, "apps.yaml, apps-dev.yaml")
+
+	cfg, meta, err := LoadRepoConfigWithMetadata(root)
+	if err != nil {
+		t.Fatalf("LoadRepoConfigWithMetadata returned error: %v", err)
+	}
+	if !slices.Equal(cfg.Layout.Apps.Files, []string{"apps.yaml", "apps-dev.yaml"}) {
+		t.Fatalf("unexpected apps files: %v", cfg.Layout.Apps.Files)
+	}
+	if !meta.UsedEnvAppsFiles {
+		t.Fatalf("expected env apps files metadata, got %+v", meta)
+	}
+	if !strings.Contains(meta.SourceSummary(), EnvAppsFiles) {
+		t.Fatalf("expected source summary to include %s, got %q", EnvAppsFiles, meta.SourceSummary())
+	}
+}
+
 func TestLoadRepoConfigEnvOverridesFile(t *testing.T) {
 	root := t.TempDir()
 	writeFile(t, filepath.Join(root, "config.yaml"), "layout:\n  clusters_dir: clusters-from-file\n")
 	t.Setenv(EnvConfigYAML, "layout:\n  clusters_dir: clusters-from-env\n")
+	t.Setenv(EnvAppsFiles, "")
 
 	cfg, err := LoadRepoConfig(root)
 	if err != nil {
@@ -71,6 +127,7 @@ func TestLoadRepoConfigWithMetadataReportsAppliedSources(t *testing.T) {
 	root := t.TempDir()
 	writeFile(t, filepath.Join(root, "config.yaml"), "layout:\n  clusters_dir: clusters-from-file\n")
 	t.Setenv(EnvConfigYAML, "layout:\n  clusters_dir: clusters-from-env\n")
+	t.Setenv(EnvAppsFiles, "")
 
 	_, meta, err := LoadRepoConfigWithMetadata(root)
 	if err != nil {
@@ -87,6 +144,7 @@ func TestLoadRepoConfigWithMetadataReportsAppliedSources(t *testing.T) {
 func TestLoadRepoConfigRejectsInvalidEnvYAML(t *testing.T) {
 	root := t.TempDir()
 	t.Setenv(EnvConfigYAML, "layout: [")
+	t.Setenv(EnvAppsFiles, "")
 
 	_, err := LoadRepoConfig(root)
 	if err == nil {
@@ -101,6 +159,7 @@ func TestLoadRepoConfigRejectsUnknownPlaceholder(t *testing.T) {
 	root := t.TempDir()
 	writeFile(t, filepath.Join(root, "config.yaml"), "layout:\n  overrides:\n    path: overrides/{team}/{name}.yaml\n")
 	t.Setenv(EnvConfigYAML, "")
+	t.Setenv(EnvAppsFiles, "")
 
 	_, err := LoadRepoConfig(root)
 	if err == nil {
@@ -115,6 +174,7 @@ func TestLoadRepoConfigRejectsUnknownRequiredField(t *testing.T) {
 	root := t.TempDir()
 	writeFile(t, filepath.Join(root, "config.yaml"), "layout:\n  apps:\n    required:\n      - release_name\n")
 	t.Setenv(EnvConfigYAML, "")
+	t.Setenv(EnvAppsFiles, "")
 
 	_, err := LoadRepoConfig(root)
 	if err == nil {
@@ -141,7 +201,7 @@ func TestLoadReleasesUsesConfiguredFieldNames(t *testing.T) {
 	if err := os.MkdirAll(clusterDir, 0o755); err != nil {
 		t.Fatalf("MkdirAll: %v", err)
 	}
-	writeFile(t, filepath.Join(clusterDir, layout.Apps.File), `- release_name: hello-world
+	writeFile(t, filepath.Join(clusterDir, layout.Apps.Files[0]), `- release_name: hello-world
   target_namespace: hello-world
   argocd_project: test
   repo_url: internal.oci.repo/helm-int
@@ -168,7 +228,7 @@ func TestLoadReleasesRequiresTargetRevisionForRemoteCharts(t *testing.T) {
 	if err := os.MkdirAll(clusterDir, 0o755); err != nil {
 		t.Fatalf("MkdirAll: %v", err)
 	}
-	writeFile(t, filepath.Join(clusterDir, layout.Apps.File), `- name: argocd
+	writeFile(t, filepath.Join(clusterDir, layout.Apps.Files[0]), `- name: argocd
   namespace: argocd
   project: default
   repoURL: internal.oci.repo/helm-int
@@ -203,7 +263,7 @@ func TestLoadReleasesValidatesRequiredFields(t *testing.T) {
 	if err := os.MkdirAll(clusterDir, 0o755); err != nil {
 		t.Fatalf("MkdirAll: %v", err)
 	}
-	writeFile(t, filepath.Join(clusterDir, layout.Apps.File), `- name: hello-world
+	writeFile(t, filepath.Join(clusterDir, layout.Apps.Files[0]), `- name: hello-world
   chart: charts/hello-world
 `)
 
@@ -223,7 +283,7 @@ func TestLoadReleasesRejectsNonListApps(t *testing.T) {
 	if err := os.MkdirAll(clusterDir, 0o755); err != nil {
 		t.Fatalf("MkdirAll: %v", err)
 	}
-	writeFile(t, filepath.Join(clusterDir, layout.Apps.File), "apps:\n  - name: hello-world\n")
+	writeFile(t, filepath.Join(clusterDir, layout.Apps.Files[0]), "apps:\n  - name: hello-world\n")
 
 	_, err := LoadReleases(root, layout, "kube-bravo")
 	if err == nil {
@@ -268,7 +328,7 @@ func TestResolveOverridePathHonorsCustomPatterns(t *testing.T) {
 	root := t.TempDir()
 	layout := Default().Layout
 	layout.ClustersDir = "environments"
-	layout.Apps.File = "releases.yaml"
+	layout.Apps.Files = []string{"releases.yaml"}
 	layout.Overrides.Path = "values/{cluster}/{project}/{name}.yaml"
 	cluster := "kube-bravo"
 	release := Release{Name: "hello-world", Project: "test"}
@@ -278,6 +338,137 @@ func TestResolveOverridePathHonorsCustomPatterns(t *testing.T) {
 	got := ResolveOverridePath(root, layout, cluster, release)
 	if got != want {
 		t.Fatalf("unexpected override path: got %q want %q", got, want)
+	}
+}
+
+func TestParseAppsFilesValidatesList(t *testing.T) {
+	files, err := ParseAppsFiles("apps.yaml, apps-dev.yaml")
+	if err != nil {
+		t.Fatalf("ParseAppsFiles returned error: %v", err)
+	}
+	if !slices.Equal(files, []string{"apps.yaml", "apps-dev.yaml"}) {
+		t.Fatalf("unexpected files: %v", files)
+	}
+
+	for _, value := range []string{"apps.yaml,", "/apps.yaml", "../apps.yaml", "apps.yaml,apps.yaml"} {
+		if _, err := ParseAppsFiles(value); err == nil {
+			t.Fatalf("expected ParseAppsFiles(%q) to fail", value)
+		}
+	}
+}
+
+func TestLoadReleasesMergesAppsFilesInPrecedenceOrder(t *testing.T) {
+	root := t.TempDir()
+	layout := Default().Layout
+	layout.Apps.Files = []string{"apps.yaml", "apps-dev.yaml"}
+	clusterDir := ClusterDir(root, layout, "kube-bravo")
+	writeFile(t, filepath.Join(clusterDir, "apps.yaml"), `- name: hello-world
+  namespace: prod
+  project: default
+  chart: charts/hello-world
+`)
+	writeFile(t, filepath.Join(clusterDir, "apps-dev.yaml"), `- name: hello-world
+  namespace: dev
+  project: default
+  chart: charts/hello-world-dev
+- name: debug-app
+  namespace: dev
+  project: default
+  chart: charts/debug-app
+`)
+
+	releases, err := LoadReleases(root, layout, "kube-bravo")
+	if err != nil {
+		t.Fatalf("LoadReleases returned error: %v", err)
+	}
+	if len(releases) != 2 {
+		t.Fatalf("expected two releases, got %d: %#v", len(releases), releases)
+	}
+	if releases[0].Name != "hello-world" || releases[0].Namespace != "prod" || releases[0].Chart != "charts/hello-world" {
+		t.Fatalf("expected first file to win for duplicate release, got %#v", releases[0])
+	}
+	if releases[1].Name != "debug-app" {
+		t.Fatalf("expected additional release from secondary file, got %#v", releases[1])
+	}
+}
+
+func TestLoadReleasesIgnoresInvalidLowerPriorityDuplicate(t *testing.T) {
+	root := t.TempDir()
+	layout := Default().Layout
+	layout.Apps.Files = []string{"apps.yaml", "apps-dev.yaml"}
+	clusterDir := ClusterDir(root, layout, "kube-bravo")
+	writeFile(t, filepath.Join(clusterDir, "apps.yaml"), `- name: hello-world
+  namespace: prod
+  project: default
+  chart: charts/hello-world
+`)
+	writeFile(t, filepath.Join(clusterDir, "apps-dev.yaml"), `- name: hello-world
+  chart: charts/broken
+`)
+
+	releases, err := LoadReleases(root, layout, "kube-bravo")
+	if err != nil {
+		t.Fatalf("LoadReleases returned error: %v", err)
+	}
+	if len(releases) != 1 || releases[0].Namespace != "prod" {
+		t.Fatalf("expected higher-priority release to win, got %#v", releases)
+	}
+}
+
+func TestLoadReleasesRejectsDuplicateNamesInSameAppsFile(t *testing.T) {
+	root := t.TempDir()
+	layout := Default().Layout
+	clusterDir := ClusterDir(root, layout, "kube-bravo")
+	writeFile(t, filepath.Join(clusterDir, "apps.yaml"), `- name: hello-world
+  namespace: prod
+  project: default
+  chart: charts/hello-world
+- name: hello-world
+  namespace: dev
+  project: default
+  chart: charts/hello-world
+`)
+
+	_, err := LoadReleases(root, layout, "kube-bravo")
+	if err == nil {
+		t.Fatal("expected duplicate release error")
+	}
+	if !strings.Contains(err.Error(), `duplicate release name "hello-world"`) {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestLoadReleasesSkipsMissingAppsFiles(t *testing.T) {
+	root := t.TempDir()
+	layout := Default().Layout
+	layout.Apps.Files = []string{"apps.yaml", "apps-dev.yaml"}
+	clusterDir := ClusterDir(root, layout, "kube-bravo")
+	writeFile(t, filepath.Join(clusterDir, "apps-dev.yaml"), `- name: debug-app
+  namespace: dev
+  project: default
+  chart: charts/debug-app
+`)
+
+	releases, err := LoadReleases(root, layout, "kube-bravo")
+	if err != nil {
+		t.Fatalf("LoadReleases returned error: %v", err)
+	}
+	if len(releases) != 1 || releases[0].Name != "debug-app" {
+		t.Fatalf("unexpected releases: %#v", releases)
+	}
+}
+
+func TestLoadReleasesErrorsWhenNoAppsFilesExist(t *testing.T) {
+	root := t.TempDir()
+	layout := Default().Layout
+	layout.Apps.Files = []string{"apps.yaml", "apps-dev.yaml"}
+
+	_, err := LoadReleases(root, layout, "kube-bravo")
+	if err == nil {
+		t.Fatal("expected missing apps files error")
+	}
+	if !strings.Contains(err.Error(), "none of the configured apps files exist") {
+		t.Fatalf("unexpected error: %v", err)
 	}
 }
 

@@ -14,8 +14,7 @@ import (
 )
 
 func renderCluster(root string, layout config.LayoutConfig, cluster, state, outputRoot string, renderer *helmrender.Renderer, mode cli.RenderErrorMode, duplicateKeyMode cli.DuplicateKeyMode) error {
-	appsPath := config.AppsPath(root, layout, cluster)
-	if !fileExists(appsPath) {
+	if !anyAppsFileExists(root, layout, cluster) {
 		return nil
 	}
 	releases, err := config.LoadReleases(root, layout, cluster)

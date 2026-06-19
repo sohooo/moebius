@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/sohooo/moebius/internal/cli"
 	"github.com/sohooo/moebius/internal/config"
 	"github.com/sohooo/moebius/internal/helmrender"
 	"github.com/sohooo/moebius/internal/output"
@@ -103,6 +104,69 @@ func TestMissingVersionRenderWarning_FormatsIdentity(t *testing.T) {
 		if !strings.Contains(got, needle) {
 			t.Fatalf("expected warning to contain %q, got %q", needle, got)
 		}
+	}
+}
+
+func TestRenderClusterLoadsMultipleAppsFilesAndSharedOverrides(t *testing.T) {
+	root := t.TempDir()
+	layout := config.Default().Layout
+	layout.Apps.Files = []string{"apps.yaml", "apps-dev.yaml"}
+	clusterDir := config.ClusterDir(root, layout, "kube-bravo")
+	outputRoot := filepath.Join(root, "out")
+	cacheDir := filepath.Join(root, "cache")
+
+	writeReportTestFile(t, filepath.Join(root, "charts", "hello-world", "Chart.yaml"), "apiVersion: v2\nname: hello-world\nversion: 0.1.0\n")
+	writeReportTestFile(t, filepath.Join(root, "charts", "hello-world", "values.yaml"), "message: default\n")
+	writeReportTestFile(t, filepath.Join(root, "charts", "hello-world", "templates", "configmap.yaml"), `apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ .Release.Name }}
+  namespace: {{ .Release.Namespace }}
+data:
+  message: {{ .Values.message | quote }}
+`)
+	writeReportTestFile(t, filepath.Join(clusterDir, "apps.yaml"), `- name: prod-app
+  namespace: prod
+  project: default
+  chart: charts/hello-world
+`)
+	writeReportTestFile(t, filepath.Join(clusterDir, "apps-dev.yaml"), `- name: prod-app
+  namespace: ignored
+  project: default
+  chart: charts/ignored
+- name: dev-app
+  namespace: dev
+  project: default
+  chart: charts/hello-world
+`)
+	writeReportTestFile(t, filepath.Join(clusterDir, "overrides", "default", "dev-app.yaml"), "message: dev\n")
+
+	err := renderCluster(root, layout, "kube-bravo", "current", outputRoot, helmrender.New(cacheDir), cli.RenderErrorModeFail, cli.DuplicateKeyModeError)
+	if err != nil {
+		t.Fatalf("renderCluster returned error: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(outputRoot, "kube-bravo", "prod-app", "rendered.yaml")); err != nil {
+		t.Fatalf("expected prod-app rendered output: %v", err)
+	}
+	devRendered, err := os.ReadFile(filepath.Join(outputRoot, "kube-bravo", "dev-app", "rendered.yaml"))
+	if err != nil {
+		t.Fatalf("expected dev-app rendered output: %v", err)
+	}
+	if !strings.Contains(string(devRendered), `message: "dev"`) {
+		t.Fatalf("expected dev-app override values, got:\n%s", string(devRendered))
+	}
+	if _, err := os.Stat(filepath.Join(outputRoot, "kube-bravo", "ignored", "rendered.yaml")); err == nil {
+		t.Fatalf("duplicate release from secondary apps file should not render")
+	}
+}
+
+func writeReportTestFile(t *testing.T, path, body string) {
+	t.Helper()
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatalf("MkdirAll: %v", err)
+	}
+	if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
+		t.Fatalf("WriteFile: %v", err)
 	}
 }
 

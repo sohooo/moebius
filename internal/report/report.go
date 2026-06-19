@@ -6,6 +6,8 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/go-git/go-git/v5/plumbing/object"
+
 	"github.com/sohooo/moebius/internal/cli"
 	"github.com/sohooo/moebius/internal/config"
 	"github.com/sohooo/moebius/internal/gitrepo"
@@ -27,6 +29,9 @@ func Build(opts cli.Options) ([]output.ClusterReport, string, error) {
 	}
 	layout := repoConfig.Layout
 	layout.ClustersDir = repoConfig.EffectiveClustersDir(opts.ClustersDir)
+	if len(opts.AppsFiles) > 0 {
+		layout.Apps.Files = opts.AppsFiles
+	}
 	head, err := repo.ResolveCommit("HEAD")
 	if err != nil {
 		return nil, "", err
@@ -92,8 +97,8 @@ func Build(opts cli.Options) ([]output.ClusterReport, string, error) {
 		_ = writeArtifactSummary(outputDir, reports)
 	}()
 	for _, cluster := range clusters {
-		currentExists := fileExists(config.AppsPath(repo.Root(), layout, cluster))
-		baselineExists, err := repo.PathExistsAtCommit(mergeBase, filepath.ToSlash(filepath.Join(layout.ClustersDir, cluster, layout.Apps.File)))
+		currentExists := anyAppsFileExists(repo.Root(), layout, cluster)
+		baselineExists, err := anyAppsFileExistsAtCommit(repo, mergeBase, layout, cluster)
 		if err != nil {
 			return nil, "", err
 		}
@@ -130,7 +135,7 @@ func Build(opts cli.Options) ([]output.ClusterReport, string, error) {
 }
 
 func loadReleasesIfPresent(root string, layout config.LayoutConfig, cluster string) (map[string]config.Release, error) {
-	if !fileExists(config.AppsPath(root, layout, cluster)) {
+	if !anyAppsFileExists(root, layout, cluster) {
 		return map[string]config.Release{}, nil
 	}
 	releases, err := config.LoadReleases(root, layout, cluster)
@@ -147,4 +152,27 @@ func loadReleasesIfPresent(root string, layout config.LayoutConfig, cluster stri
 func fileExists(path string) bool {
 	_, err := os.Stat(path)
 	return err == nil
+}
+
+func anyAppsFileExists(root string, layout config.LayoutConfig, cluster string) bool {
+	for _, path := range config.AppsPaths(root, layout, cluster) {
+		if fileExists(path) {
+			return true
+		}
+	}
+	return false
+}
+
+func anyAppsFileExistsAtCommit(repo *gitrepo.Repo, commit *object.Commit, layout config.LayoutConfig, cluster string) (bool, error) {
+	for _, appsFile := range layout.Apps.Files {
+		relPath := filepath.ToSlash(filepath.Join(layout.ClustersDir, cluster, appsFile))
+		exists, err := repo.PathExistsAtCommit(commit, relPath)
+		if err != nil {
+			return false, err
+		}
+		if exists {
+			return true, nil
+		}
+	}
+	return false, nil
 }

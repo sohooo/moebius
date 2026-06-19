@@ -21,24 +21,24 @@ func selectClusters(repo *gitrepo.Repo, layout config.LayoutConfig, opts cli.Opt
 		}
 		if !slicesContains(available, opts.Cluster) {
 			if len(available) == 0 {
-				return nil, fmt.Errorf("cluster %q does not exist in the effective layout under %q", opts.Cluster, layout.ClustersDir)
+				return nil, fmt.Errorf("cluster %q does not exist in the effective layout under %q (apps files: %s)", opts.Cluster, layout.ClustersDir, config.AppsFilesSummary(layout))
 			}
-			return nil, fmt.Errorf("cluster %q does not exist in the effective layout under %q; available clusters: %s", opts.Cluster, layout.ClustersDir, strings.Join(available, ", "))
+			return nil, fmt.Errorf("cluster %q does not exist in the effective layout under %q (apps files: %s); available clusters: %s", opts.Cluster, layout.ClustersDir, config.AppsFilesSummary(layout), strings.Join(available, ", "))
 		}
 		return []string{opts.Cluster}, nil
 	case opts.AllClusters:
-		return repo.AllClusters(layout.ClustersDir, layout.Apps.File)
+		return repo.AllClustersForAppsFiles(layout.ClustersDir, layout.Apps.Files)
 	default:
 		return repo.ChangedClusters(layout.ClustersDir, mergeBase, head)
 	}
 }
 
 func availableClusters(repo *gitrepo.Repo, layout config.LayoutConfig, mergeBase *object.Commit) ([]string, error) {
-	current, err := repo.AllClusters(layout.ClustersDir, layout.Apps.File)
+	current, err := repo.AllClustersForAppsFiles(layout.ClustersDir, layout.Apps.Files)
 	if err != nil {
 		return nil, err
 	}
-	baseline, err := repo.AllClustersAtCommit(mergeBase, layout.ClustersDir, layout.Apps.File)
+	baseline, err := repo.AllClustersAtCommitForAppsFiles(mergeBase, layout.ClustersDir, layout.Apps.Files)
 	if err != nil {
 		return nil, err
 	}

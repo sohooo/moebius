@@ -68,20 +68,15 @@ func anchorSlug(parts ...string) string {
 func gitlabHeadingSlug(heading string) string {
 	raw := strings.ToLower(heading)
 	var b strings.Builder
-	lastDash := false
 	for _, r := range raw {
-		if r == '.' || r == '`' || r == '·' || r == '/' {
+		if r == ':' || r == '.' || r == '`' || r == '·' || r == '/' {
 			continue
 		}
 		if (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') {
 			b.WriteRune(r)
-			lastDash = false
 			continue
 		}
-		if !lastDash {
-			b.WriteByte('-')
-			lastDash = true
-		}
+		b.WriteByte('-')
 	}
 	return strings.Trim(b.String(), "-")
 }

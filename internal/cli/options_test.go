@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"errors"
 	"flag"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -68,6 +69,24 @@ func TestParseGitLabToken(t *testing.T) {
 	}
 	if opts.GitLabToken != "secret" {
 		t.Fatalf("expected gitlab token override, got %q", opts.GitLabToken)
+	}
+}
+
+func TestParseAppsFiles(t *testing.T) {
+	opts, err := Parse([]string{"diff", "--apps-files", "apps.yaml, apps-dev.yaml"}, &bytes.Buffer{})
+	if err != nil {
+		t.Fatalf("Parse returned error: %v", err)
+	}
+	if !slices.Equal(opts.AppsFiles, []string{"apps.yaml", "apps-dev.yaml"}) {
+		t.Fatalf("unexpected apps files: %v", opts.AppsFiles)
+	}
+}
+
+func TestParseAppsFilesRejectsInvalidList(t *testing.T) {
+	for _, value := range []string{"apps.yaml,", "/apps.yaml", "../apps.yaml", "apps.yaml,apps.yaml"} {
+		if _, err := Parse([]string{"diff", "--apps-files", value}, &bytes.Buffer{}); err == nil {
+			t.Fatalf("expected --apps-files %q to fail", value)
+		}
 	}
 }
 

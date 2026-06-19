@@ -12,6 +12,7 @@ import (
 )
 
 const EnvConfigYAML = "MOBIUS_CONFIG_YAML"
+const EnvAppsFiles = "MOBIUS_APPS_FILES"
 
 var placeholderPattern = regexp.MustCompile(`\{([^{}]+)\}`)
 
@@ -22,8 +23,9 @@ type RepoConfig struct {
 }
 
 type LoadMetadata struct {
-	UsedConfigFile bool
-	UsedEnvConfig  bool
+	UsedConfigFile   bool
+	UsedEnvConfig    bool
+	UsedEnvAppsFiles bool
 }
 
 type LayoutConfig struct {
@@ -34,6 +36,7 @@ type LayoutConfig struct {
 
 type AppsConfig struct {
 	File     string           `yaml:"file"`
+	Files    []string         `yaml:"files"`
 	Kind     string           `yaml:"kind"`
 	Fields   AppsFieldsConfig `yaml:"fields"`
 	Required []string         `yaml:"required"`
@@ -67,8 +70,8 @@ func Default() RepoConfig {
 		Layout: LayoutConfig{
 			ClustersDir: "clusters",
 			Apps: AppsConfig{
-				File: "apps.yaml",
-				Kind: "list",
+				Files: []string{"apps.yaml"},
+				Kind:  "list",
 				Fields: AppsFieldsConfig{
 					Name:           "name",
 					Namespace:      "namespace",
@@ -113,6 +116,15 @@ func LoadRepoConfigWithMetadata(root string) (RepoConfig, LoadMetadata, error) {
 		}
 	}
 
+	if envAppsFiles := os.Getenv(EnvAppsFiles); envAppsFiles != "" {
+		meta.UsedEnvAppsFiles = true
+		files, err := ParseAppsFiles(envAppsFiles)
+		if err != nil {
+			return RepoConfig{}, meta, fmt.Errorf("parse %s: %w", EnvAppsFiles, err)
+		}
+		cfg.Layout.Apps.Files = files
+	}
+
 	if err := cfg.Validate(); err != nil {
 		return RepoConfig{}, meta, fmt.Errorf("invalid config after applying %s: %w", meta.SourceSummary(), err)
 	}
@@ -127,22 +139,46 @@ func (m LoadMetadata) SourceSummary() string {
 	if m.UsedEnvConfig {
 		sources = append(sources, EnvConfigYAML)
 	}
+	if m.UsedEnvAppsFiles {
+		sources = append(sources, EnvAppsFiles)
+	}
 	return strings.Join(sources, " + ")
 }
 
-func (c RepoConfig) Validate() error {
+func (c *RepoConfig) Validate() error {
 	if c.Layout.ClustersDir == "" {
 		return fmt.Errorf("layout.clusters_dir must not be empty")
 	}
 	if filepath.IsAbs(c.Layout.ClustersDir) {
 		return fmt.Errorf("layout.clusters_dir must be relative")
 	}
-	if c.Layout.Apps.File == "" {
-		return fmt.Errorf("layout.apps.file must not be empty")
+	if c.Layout.Apps.File != "" {
+		return fmt.Errorf("layout.apps.file is no longer supported; use layout.apps.files")
 	}
-	if filepath.IsAbs(c.Layout.Apps.File) {
-		return fmt.Errorf("layout.apps.file must be relative to the cluster directory")
+	if len(c.Layout.Apps.Files) == 0 {
+		return fmt.Errorf("layout.apps.files must contain at least one file")
 	}
+	seenAppsFiles := map[string]struct{}{}
+	normalizedAppsFiles := make([]string, 0, len(c.Layout.Apps.Files))
+	for _, file := range c.Layout.Apps.Files {
+		file = strings.TrimSpace(file)
+		if file == "" {
+			return fmt.Errorf("layout.apps.files must not contain empty entries")
+		}
+		if filepath.IsAbs(file) {
+			return fmt.Errorf("layout.apps.files entries must be relative to the cluster directory")
+		}
+		clean := filepath.ToSlash(filepath.Clean(file))
+		if clean == "." || strings.HasPrefix(clean, "../") || clean == ".." {
+			return fmt.Errorf("layout.apps.files entries must stay within the cluster directory")
+		}
+		if _, ok := seenAppsFiles[clean]; ok {
+			return fmt.Errorf("layout.apps.files contains duplicate file %q", clean)
+		}
+		seenAppsFiles[clean] = struct{}{}
+		normalizedAppsFiles = append(normalizedAppsFiles, clean)
+	}
+	c.Layout.Apps.Files = normalizedAppsFiles
 	if c.Layout.Apps.Kind != "list" {
 		return fmt.Errorf("layout.apps.kind must be %q", "list")
 	}
@@ -182,14 +218,73 @@ func ClusterDir(root string, layout LayoutConfig, cluster string) string {
 }
 
 func AppsPath(root string, layout LayoutConfig, cluster string) string {
-	return filepath.Join(ClusterDir(root, layout, cluster), layout.Apps.File)
+	return filepath.Join(ClusterDir(root, layout, cluster), layout.Apps.Files[0])
+}
+
+func AppsPaths(root string, layout LayoutConfig, cluster string) []string {
+	clusterDir := ClusterDir(root, layout, cluster)
+	paths := make([]string, 0, len(layout.Apps.Files))
+	for _, file := range layout.Apps.Files {
+		paths = append(paths, filepath.Join(clusterDir, filepath.FromSlash(file)))
+	}
+	return paths
 }
 
 func LoadReleases(root string, layout LayoutConfig, cluster string) ([]Release, error) {
-	path := AppsPath(root, layout, cluster)
+	paths := AppsPaths(root, layout, cluster)
+	releases := make([]Release, 0)
+	seenAcrossFiles := map[string]struct{}{}
+	found := false
+	fieldMap := layout.Apps.Fields.Map()
+	for _, path := range paths {
+		raw, err := loadReleaseItems(path)
+		if err != nil {
+			if os.IsNotExist(err) {
+				continue
+			}
+			return nil, err
+		}
+		found = true
+		seenInFile := map[string]struct{}{}
+		for _, item := range raw {
+			item = normalizeMap(item)
+			release := Release{
+				Name:           stringField(item, fieldMap["name"]),
+				Namespace:      stringField(item, fieldMap["namespace"]),
+				Project:        stringField(item, fieldMap["project"]),
+				RepoURL:        stringField(item, fieldMap["repoURL"]),
+				Chart:          stringField(item, fieldMap["chart"]),
+				TargetRevision: stringField(item, fieldMap["targetRevision"]),
+			}
+			if release.Name != "" {
+				if _, ok := seenInFile[release.Name]; ok {
+					return nil, fmt.Errorf("duplicate release name %q in %s", release.Name, path)
+				}
+				seenInFile[release.Name] = struct{}{}
+				if _, ok := seenAcrossFiles[release.Name]; ok {
+					continue
+				}
+			}
+			if err := validateRelease(path, layout.Apps.Required, release); err != nil {
+				return nil, err
+			}
+			if _, ok := seenAcrossFiles[release.Name]; ok {
+				continue
+			}
+			seenAcrossFiles[release.Name] = struct{}{}
+			releases = append(releases, release)
+		}
+	}
+	if !found {
+		return nil, fmt.Errorf("none of the configured apps files exist for cluster %q: %s", cluster, AppsFilesSummary(layout))
+	}
+	return releases, nil
+}
+
+func loadReleaseItems(path string) ([]map[string]any, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
-		return nil, fmt.Errorf("read %s: %w", path, err)
+		return nil, err
 	}
 
 	var raw []map[string]any
@@ -199,30 +294,36 @@ func LoadReleases(root string, layout LayoutConfig, cluster string) ([]Release, 
 	if len(raw) == 0 {
 		return nil, fmt.Errorf("%s must contain at least one release", path)
 	}
+	return raw, nil
+}
 
-	fieldMap := layout.Apps.Fields.Map()
+func ParseAppsFiles(value string) ([]string, error) {
+	parts := strings.Split(value, ",")
+	files := make([]string, 0, len(parts))
 	seen := map[string]struct{}{}
-	releases := make([]Release, 0, len(raw))
-	for _, item := range raw {
-		item = normalizeMap(item)
-		release := Release{
-			Name:           stringField(item, fieldMap["name"]),
-			Namespace:      stringField(item, fieldMap["namespace"]),
-			Project:        stringField(item, fieldMap["project"]),
-			RepoURL:        stringField(item, fieldMap["repoURL"]),
-			Chart:          stringField(item, fieldMap["chart"]),
-			TargetRevision: stringField(item, fieldMap["targetRevision"]),
+	for _, part := range parts {
+		file := strings.TrimSpace(part)
+		if file == "" {
+			return nil, fmt.Errorf("apps files list must not contain empty entries")
 		}
-		if err := validateRelease(path, layout.Apps.Required, release); err != nil {
-			return nil, err
+		if filepath.IsAbs(file) {
+			return nil, fmt.Errorf("apps file %q must be relative to the cluster directory", file)
 		}
-		if _, ok := seen[release.Name]; ok {
-			return nil, fmt.Errorf("duplicate release name %q in %s", release.Name, path)
+		clean := filepath.ToSlash(filepath.Clean(file))
+		if clean == "." || strings.HasPrefix(clean, "../") || clean == ".." {
+			return nil, fmt.Errorf("apps file %q must stay within the cluster directory", file)
 		}
-		seen[release.Name] = struct{}{}
-		releases = append(releases, release)
+		if _, ok := seen[clean]; ok {
+			return nil, fmt.Errorf("duplicate apps file %q", clean)
+		}
+		seen[clean] = struct{}{}
+		files = append(files, clean)
 	}
-	return releases, nil
+	return files, nil
+}
+
+func AppsFilesSummary(layout LayoutConfig) string {
+	return strings.Join(layout.Apps.Files, ",")
 }
 
 func ResolveOverridePath(root string, layout LayoutConfig, cluster string, release Release) string {

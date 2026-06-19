@@ -5,8 +5,9 @@
 1. built-in defaults
 2. optional repo-root `config.yaml`
 3. optional `MOBIUS_CONFIG_YAML`
+4. optional `MOBIUS_APPS_FILES`
 
-Targeted CLI overrides such as `--clusters-dir` apply on top.
+Targeted CLI overrides such as `--clusters-dir` and `--apps-files` apply on top.
 
 ## Default Layout
 
@@ -14,6 +15,7 @@ By default, cluster definitions live under `clusters/`.
 
 Expected structure:
 - `clusters/<cluster>/apps.yaml`
+- optional additional apps files such as `clusters/<cluster>/apps-dev.yaml`
 - `clusters/<cluster>/overrides/<project>/<name>.yaml`
 - `clusters/<cluster>/overrides/<name>.yaml`
 
@@ -39,12 +41,14 @@ Local charts are represented with:
 
 It can define:
 - cluster root directory
-- apps file name
+- apps file names, in precedence order
 - field remapping for release entries
 - required canonical fields
 - primary and fallback override path patterns
 
-The apps file must remain a top-level YAML list of release objects. `møbius` does not support nested release extraction, arbitrary YAML queries, or custom templating rules.
+Each apps file must remain a top-level YAML list of release objects. `møbius` does not support nested release extraction, arbitrary YAML queries, or custom templating rules.
+
+When multiple apps files are configured, missing files are skipped per cluster. Earlier files have precedence: if the same release name appears in `apps.yaml` and `apps-dev.yaml`, the release from `apps.yaml` is used.
 
 Example:
 
@@ -52,7 +56,9 @@ Example:
 layout:
   clusters_dir: clusters
   apps:
-    file: apps.yaml
+    files:
+      - apps.yaml
+      - apps-dev.yaml
     fields:
       name: name
       namespace: namespace
@@ -75,7 +81,8 @@ Example:
 layout:
   clusters_dir: environments
   apps:
-    file: releases.yaml
+    files:
+      - releases.yaml
     fields:
       name: release_name
       namespace: target_namespace
@@ -95,6 +102,7 @@ layout:
 Useful remapping cases:
 - ArgoCD-style field names that differ from the defaults
 - repos that use `releases.yaml` instead of `apps.yaml`
+- test clusters that add `apps-dev.yaml` alongside `apps.yaml`
 - alternative override file naming schemes
 
 Example field remapping:
@@ -118,7 +126,10 @@ Configuration precedence is:
 1. built-in defaults
 2. optional repo-root `config.yaml`
 3. optional `MOBIUS_CONFIG_YAML`
-4. targeted CLI overrides such as `--clusters-dir`
+4. optional `MOBIUS_APPS_FILES`
+5. targeted CLI overrides such as `--clusters-dir` and `--apps-files`
+
+`MOBIUS_APPS_FILES` and `--apps-files` accept comma-separated files, for example `apps.yaml,apps-dev.yaml`.
 
 ## Practical Recommendations
 

@@ -24,6 +24,9 @@ func prepareBaselineCluster(repo *gitrepo.Repo, mergeBase *object.Commit, layout
 		return err
 	}
 
+	if !anyAppsFileExists(baselineRoot, layout, cluster) {
+		return nil
+	}
 	releases, err := config.LoadReleases(baselineRoot, layout, cluster)
 	if err != nil {
 		return err

@@ -205,7 +205,7 @@ func TestRenderDescriptionBody_UsesEmojiHeadingsAndStableLinks(t *testing.T) {
 	if !strings.Contains(body, "[kube-bravo](#user-content-computer-kube-bravo)") {
 		t.Fatalf("expected emoji cluster navigation link:\n%s", body)
 	}
-	if !strings.Contains(body, "[`Deployment/hello-world`](#user-content-kube-bravo-hello-world-demodeployment-hello-world)") {
+	if !strings.Contains(body, "[`Deployment/hello-world`](#user-content-kube-bravo--hello-world--demodeployment-hello-world)") {
 		t.Fatalf("expected resource highlight link:\n%s", body)
 	}
 	if !strings.Contains(body, "## :computer: kube-bravo") {
@@ -250,7 +250,7 @@ func TestRenderDescriptionBody_UsesEmojiHeadingsAndStableLinks(t *testing.T) {
 	if !strings.Contains(body, "| **Severity** | 🔴 critical 1 · 🟠 high 1 |") {
 		t.Fatalf("expected severity summary badges:\n%s", body)
 	}
-	if !strings.Contains(body, "[`ClusterRole/hello-world`](#user-content-kube-bravo-hello-world-clusterrole-hello-world)") {
+	if !strings.Contains(body, "[`ClusterRole/hello-world`](#user-content-kube-bravo--hello-world--clusterrole-hello-world)") {
 		t.Fatalf("expected empty namespace resource link to preserve GitLab heading slug:\n%s", body)
 	}
 	if strings.Contains(body, "#user-content-kube-bravo-hello-world-none-clusterrole-hello-world") {
@@ -259,7 +259,7 @@ func TestRenderDescriptionBody_UsesEmojiHeadingsAndStableLinks(t *testing.T) {
 	if !strings.Contains(body, "**Changes**") {
 		t.Fatalf("expected chart changes section:\n%s", body)
 	}
-	if !strings.Contains(body, "- 🔴 [`ClusterRole/hello-world`](#user-content-kube-bravo-hello-world-clusterrole-hello-world) · RBAC rules changed at `rules`") {
+	if !strings.Contains(body, "- 🔴 [`ClusterRole/hello-world`](#user-content-kube-bravo--hello-world--clusterrole-hello-world) · RBAC rules changed at `rules`") {
 		t.Fatalf("expected linked chart changes with severity icon only:\n%s", body)
 	}
 	if strings.Contains(body, "**critical**") || strings.Contains(body, "**high**") {
@@ -339,8 +339,8 @@ func TestRenderDescriptionBody_ResourceLinksIncludeChartAndNamespace(t *testing.
 	if err != nil {
 		t.Fatalf("RenderDescriptionBodyWithOptions returned error: %v", err)
 	}
-	firstAnchor := "#user-content-kube-bravo-hello-world-demodeployment-hello-world"
-	secondAnchor := "#user-content-kube-bravo-other-chart-otherdeployment-hello-world"
+	firstAnchor := "#user-content-kube-bravo--hello-world--demodeployment-hello-world"
+	secondAnchor := "#user-content-kube-bravo--other-chart--otherdeployment-hello-world"
 	if !strings.Contains(body, firstAnchor) || !strings.Contains(body, secondAnchor) {
 		t.Fatalf("expected resource anchors to include chart and namespace:\n%s", body)
 	}
@@ -376,7 +376,7 @@ func TestRenderDescriptionBody_IgnoresDotsInGitLabResourceAnchors(t *testing.T) 
 	if err != nil {
 		t.Fatalf("RenderDescriptionBodyWithOptions returned error: %v", err)
 	}
-	want := "#user-content-kube-bravo-spawn-customresourcedefinition-clustermetadatacoreexamplecom"
+	want := "#user-content-kube-bravo--spawn--customresourcedefinition-clustermetadatacoreexamplecom"
 	if !strings.Contains(body, want) {
 		t.Fatalf("expected dotted CRD anchor to ignore dots:\n%s", body)
 	}
@@ -385,6 +385,46 @@ func TestRenderDescriptionBody_IgnoresDotsInGitLabResourceAnchors(t *testing.T) 
 	}
 	if !strings.Contains(body, "#### `kube-bravo` · spawn · /CustomResourceDefinition clustermetadata.core.example.com") {
 		t.Fatalf("expected readable CRD resource heading:\n%s", body)
+	}
+}
+
+func TestRenderDescriptionBody_ResourceLinksPreserveGitLabSeparatorDashes(t *testing.T) {
+	report := ClusterReport{
+		Name:    "kube-bravo",
+		Changed: 1,
+		Charts: []ChartReport{{
+			Name:      "longhorn",
+			Namespace: "longhorn-system",
+			Resources: []ResourceReport{{
+				State:     "changed",
+				Kind:      "BackendTLSPolicy",
+				Name:      "oidc",
+				Namespace: "longhorn-system",
+				Assessment: severity.Assessment{
+					Level: severity.LevelHigh,
+					Findings: []severity.Finding{{
+						Level:  severity.LevelHigh,
+						Reason: "Backend TLS policy changed",
+					}},
+				},
+				Validation: validate.Result{Status: validate.StatusValid, Coverage: validate.CoverageValidated},
+			}},
+		}},
+	}
+
+	body, err := RenderDescriptionBodyWithOptions([]ClusterReport{report}, diff.ModeSemantic, NoteMetadata{}, NoteRenderOptions{
+		Mode:   cli.CommentModeFull,
+		Status: "changes detected",
+	})
+	if err != nil {
+		t.Fatalf("RenderDescriptionBodyWithOptions returned error: %v", err)
+	}
+	want := "#user-content-kube-bravo--longhorn--longhorn-systembackendtlspolicy-oidc"
+	if !strings.Contains(body, "[`BackendTLSPolicy/oidc`]("+want+")") {
+		t.Fatalf("expected chart changes link to match GitLab resource heading slug %q:\n%s", want, body)
+	}
+	if !strings.Contains(body, "#### `kube-bravo` · longhorn · longhorn-system/BackendTLSPolicy oidc") {
+		t.Fatalf("expected matching resource heading:\n%s", body)
 	}
 }
 

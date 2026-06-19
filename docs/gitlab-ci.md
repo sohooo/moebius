@@ -142,7 +142,8 @@ variables:
     layout:
       clusters_dir: environments
       apps:
-        file: releases.yaml
+        files:
+          - releases.yaml
         fields:
           name: release_name
           namespace: target_namespace
