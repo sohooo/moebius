@@ -33,6 +33,13 @@ type githubContent struct {
 
 var plainSemverTag = regexp.MustCompile(`^v?[0-9]+\.[0-9]+\.[0-9]+$`)
 
+var (
+	schemaHTTPClient          = &http.Client{}
+	githubAPIBaseURL          = "https://api.github.com"
+	githubReleaseDownloadBase = "https://github.com"
+	githubArchiveBase         = "https://github.com"
+)
+
 func loadSourceDocuments(root string, source schemaSource, existingLock schemaLock, verify bool) ([]sourceDocument, lockedSource, error) {
 	switch source.SourceType {
 	case "file":
@@ -135,21 +142,20 @@ func loadGitHubReleaseSourceDocuments(root string, source schemaSource, existing
 	}
 
 	if source.AssetName != "" {
-		downloadURL := fmt.Sprintf("https://github.com/%s/releases/download/%s/%s", source.Repo, resolvedVersion, source.AssetName)
+		downloadURL := fmt.Sprintf("%s/%s/releases/download/%s/%s", strings.TrimRight(githubReleaseDownloadBase, "/"), source.Repo, resolvedVersion, source.AssetName)
 		docs, err := loadURLSourceDocuments([]string{downloadURL})
 		return docs, locked, err
 	}
 
-	archiveURL := fmt.Sprintf("https://github.com/%s/archive/refs/tags/%s.tar.gz", source.Repo, resolvedVersion)
+	archiveURL := fmt.Sprintf("%s/%s/archive/refs/tags/%s.tar.gz", strings.TrimRight(githubArchiveBase, "/"), source.Repo, resolvedVersion)
 	documents, err := loadGitHubArchiveDocuments(root, archiveURL, expandPatterns(source.Paths, resolvedVersion))
 	return documents, locked, err
 }
 
 func loadURLSourceDocuments(rawURLs []string) ([]sourceDocument, error) {
-	client := &http.Client{}
 	documents := make([]sourceDocument, 0, len(rawURLs))
 	for _, rawURL := range rawURLs {
-		resp, err := client.Get(rawURL)
+		resp, err := schemaHTTPClient.Get(rawURL)
 		if err != nil {
 			return nil, err
 		}
@@ -167,8 +173,7 @@ func loadURLSourceDocuments(rawURLs []string) ([]sourceDocument, error) {
 }
 
 func loadGitHubArchiveDocuments(root string, rawURL string, patterns []string) ([]sourceDocument, error) {
-	client := &http.Client{}
-	resp, err := client.Get(rawURL)
+	resp, err := schemaHTTPClient.Get(rawURL)
 	if err != nil {
 		return nil, err
 	}
@@ -223,15 +228,14 @@ func loadGitHubArchiveDocuments(root string, rawURL string, patterns []string) (
 }
 
 func resolveLatestGitHubRelease(repo string) (string, error) {
-	apiURL := fmt.Sprintf("https://api.github.com/repos/%s/releases/latest", repo)
-	client := &http.Client{}
+	apiURL := fmt.Sprintf("%s/repos/%s/releases/latest", strings.TrimRight(githubAPIBaseURL, "/"), repo)
 	req, err := http.NewRequest(http.MethodGet, apiURL, nil)
 	if err != nil {
 		return "", err
 	}
 	req.Header.Set("Accept", "application/vnd.github+json")
 	req.Header.Set("User-Agent", "mobius-schema-sync")
-	resp, err := client.Do(req)
+	resp, err := schemaHTTPClient.Do(req)
 	if err != nil {
 		return "", err
 	}
@@ -255,18 +259,16 @@ func resolveLatestGitHubRelease(repo string) (string, error) {
 }
 
 func resolveLatestGitHubTag(repo string) (string, error) {
-	client := &http.Client{}
-
 	var allTags []githubTag
 	for page := 1; ; page++ {
-		apiURL := fmt.Sprintf("https://api.github.com/repos/%s/tags?per_page=100&page=%d", repo, page)
+		apiURL := fmt.Sprintf("%s/repos/%s/tags?per_page=100&page=%d", strings.TrimRight(githubAPIBaseURL, "/"), repo, page)
 		req, err := http.NewRequest(http.MethodGet, apiURL, nil)
 		if err != nil {
 			return "", err
 		}
 		req.Header.Set("Accept", "application/vnd.github+json")
 		req.Header.Set("User-Agent", "mobius-schema-sync")
-		resp, err := client.Do(req)
+		resp, err := schemaHTTPClient.Do(req)
 		if err != nil {
 			return "", err
 		}
@@ -315,15 +317,14 @@ func latestPlainSemverTag(payload []githubTag) (string, bool) {
 }
 
 func resolveLatestGitHubDirectory(repo string) (string, error) {
-	apiURL := fmt.Sprintf("https://api.github.com/repos/%s/contents", repo)
-	client := &http.Client{}
+	apiURL := fmt.Sprintf("%s/repos/%s/contents", strings.TrimRight(githubAPIBaseURL, "/"), repo)
 	req, err := http.NewRequest(http.MethodGet, apiURL, nil)
 	if err != nil {
 		return "", err
 	}
 	req.Header.Set("Accept", "application/vnd.github+json")
 	req.Header.Set("User-Agent", "mobius-schema-sync")
-	resp, err := client.Do(req)
+	resp, err := schemaHTTPClient.Do(req)
 	if err != nil {
 		return "", err
 	}

@@ -7,6 +7,12 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
+
+	git "github.com/go-git/go-git/v5"
+	gitconfig "github.com/go-git/go-git/v5/config"
+	"github.com/go-git/go-git/v5/plumbing"
+	"github.com/go-git/go-git/v5/plumbing/object"
 
 	"github.com/sohooo/moebius/internal/cli"
 	"github.com/sohooo/moebius/internal/config"
@@ -160,6 +166,122 @@ data:
 	}
 }
 
+func TestBuildRendersMergeBaseCurrentAndSelectedClusters(t *testing.T) {
+	root := t.TempDir()
+	repo, err := git.PlainInit(root, false)
+	if err != nil {
+		t.Fatalf("PlainInit: %v", err)
+	}
+	writeTinyChart(t, root)
+	writeReportTestFile(t, filepath.Join(root, "clusters/kube-bravo/apps.yaml"), `- name: app
+  namespace: demo
+  project: default
+  chart: charts/hello-world
+`)
+	writeReportTestFile(t, filepath.Join(root, "clusters/kube-baseline/apps-dev.yaml"), `- name: old
+  namespace: demo
+  project: default
+  chart: charts/hello-world
+`)
+	writeReportTestFile(t, filepath.Join(root, "clusters/kube-bravo/overrides/default/app.yaml"), "message: base\n")
+	mainHash := commitReportRepo(t, repo, "main")
+	setReportRepoMain(t, repo, mainHash)
+
+	writeReportTestFile(t, filepath.Join(root, "clusters/kube-bravo/overrides/default/app.yaml"), "message: current\n")
+	if err := os.RemoveAll(filepath.Join(root, "clusters/kube-baseline")); err != nil {
+		t.Fatalf("remove baseline-only cluster: %v", err)
+	}
+	writeReportTestFile(t, filepath.Join(root, "clusters/kube-current/apps-dev.yaml"), `- name: new
+  namespace: demo
+  project: default
+  chart: charts/hello-world
+`)
+	writeReportTestFile(t, filepath.Join(root, "clusters/kube-current/overrides/default/new.yaml"), "message: added\n")
+	_ = commitReportRepo(t, repo, "feature")
+
+	oldWD, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("Getwd: %v", err)
+	}
+	if err := os.Chdir(root); err != nil {
+		t.Fatalf("Chdir: %v", err)
+	}
+	defer func() {
+		if err := os.Chdir(oldWD); err != nil {
+			t.Fatalf("restore cwd: %v", err)
+		}
+	}()
+
+	outputDir := filepath.Join(root, "artifacts")
+	reports, gotOutputDir, err := Build(cli.Options{
+		BaseRef:       "main",
+		AppsFiles:     []string{"apps.yaml", "apps-dev.yaml"},
+		OutputDir:     outputDir,
+		ContextLines:  1,
+		Validate:      true,
+		DiffMode:      cli.DiffModeSemantic,
+		OutputFormat:  cli.OutputFormatMarkdown,
+		CommentMode:   cli.CommentModeFull,
+		PublishTarget: cli.PublishTargetDescription,
+	})
+	if err != nil {
+		t.Fatalf("Build returned error: %v", err)
+	}
+	if gotOutputDir != outputDir {
+		t.Fatalf("unexpected output dir %q want %q", gotOutputDir, outputDir)
+	}
+	if got, want := clusterNames(reports), "kube-baseline,kube-bravo,kube-current"; got != want {
+		t.Fatalf("unexpected changed cluster reports %q want %q", got, want)
+	}
+	baseline := findReport(t, reports, "kube-baseline")
+	if baseline.Removed == 0 {
+		t.Fatalf("expected kube-baseline removed resources, got %#v", baseline)
+	}
+	bravo := findReport(t, reports, "kube-bravo")
+	if bravo.Changed == 0 {
+		t.Fatalf("expected kube-bravo changed resources, got %#v", bravo)
+	}
+	current := findReport(t, reports, "kube-current")
+	if current.Added == 0 {
+		t.Fatalf("expected kube-current added resources, got %#v", current)
+	}
+	for _, rel := range []string{
+		"current/kube-bravo/app/rendered.yaml",
+		"baseline/kube-bravo/app/rendered.yaml",
+		"current/kube-current/new/rendered.yaml",
+		artifactIndexFilename,
+		artifactSummaryFilename,
+	} {
+		if _, err := os.Stat(filepath.Join(outputDir, rel)); err != nil {
+			t.Fatalf("expected artifact %s: %v", rel, err)
+		}
+	}
+
+	allReports, _, err := Build(cli.Options{
+		BaseRef:      "main",
+		AppsFiles:    []string{"apps.yaml", "apps-dev.yaml"},
+		AllClusters:  true,
+		OutputDir:    filepath.Join(root, "all-artifacts"),
+		ContextLines: 1,
+		Validate:     false,
+	})
+	if err != nil {
+		t.Fatalf("Build all clusters returned error: %v", err)
+	}
+	if got, want := clusterNames(allReports), "kube-bravo,kube-current"; got != want {
+		t.Fatalf("unexpected all-cluster reports %q want %q", got, want)
+	}
+
+	_, _, err = Build(cli.Options{
+		BaseRef:   "main",
+		Cluster:   "missing",
+		OutputDir: filepath.Join(root, "missing-artifacts"),
+	})
+	if err == nil || !strings.Contains(err.Error(), `cluster "missing" does not exist`) {
+		t.Fatalf("expected selected cluster error, got %v", err)
+	}
+}
+
 func writeReportTestFile(t *testing.T, path, body string) {
 	t.Helper()
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
@@ -168,6 +290,72 @@ func writeReportTestFile(t *testing.T, path, body string) {
 	if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
 		t.Fatalf("WriteFile: %v", err)
 	}
+}
+
+func writeTinyChart(t *testing.T, root string) {
+	t.Helper()
+	writeReportTestFile(t, filepath.Join(root, "charts/hello-world/Chart.yaml"), "apiVersion: v2\nname: hello-world\nversion: 0.1.0\n")
+	writeReportTestFile(t, filepath.Join(root, "charts/hello-world/values.yaml"), "message: default\n")
+	writeReportTestFile(t, filepath.Join(root, "charts/hello-world/templates/configmap.yaml"), `apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ .Release.Name }}
+  namespace: {{ .Release.Namespace }}
+data:
+  message: {{ .Values.message | quote }}
+`)
+}
+
+func commitReportRepo(t *testing.T, repo *git.Repository, message string) plumbing.Hash {
+	t.Helper()
+	wt, err := repo.Worktree()
+	if err != nil {
+		t.Fatalf("Worktree: %v", err)
+	}
+	if err := wt.AddGlob("."); err != nil {
+		t.Fatalf("AddGlob: %v", err)
+	}
+	hash, err := wt.Commit(message, &git.CommitOptions{
+		All:    true,
+		Author: &object.Signature{Name: "Test", Email: "test@example.com", When: time.Now()},
+	})
+	if err != nil {
+		t.Fatalf("Commit %q: %v", message, err)
+	}
+	return hash
+}
+
+func setReportRepoMain(t *testing.T, repo *git.Repository, hash plumbing.Hash) {
+	t.Helper()
+	if err := repo.Storer.SetReference(plumbing.NewHashReference(plumbing.NewBranchReferenceName("main"), hash)); err != nil {
+		t.Fatalf("set main ref: %v", err)
+	}
+	if err := repo.Storer.SetReference(plumbing.NewHashReference(plumbing.ReferenceName("refs/remotes/origin/main"), hash)); err != nil {
+		t.Fatalf("set origin/main ref: %v", err)
+	}
+	if err := repo.Storer.SetReference(plumbing.NewSymbolicReference(plumbing.ReferenceName("refs/remotes/origin/HEAD"), plumbing.ReferenceName("refs/remotes/origin/main"))); err != nil {
+		t.Fatalf("set origin/HEAD ref: %v", err)
+	}
+	_ = repo.CreateBranch(&gitconfig.Branch{Name: "main"})
+}
+
+func clusterNames(reports []output.ClusterReport) string {
+	names := make([]string, 0, len(reports))
+	for _, report := range reports {
+		names = append(names, report.Name)
+	}
+	return strings.Join(names, ",")
+}
+
+func findReport(t *testing.T, reports []output.ClusterReport, name string) output.ClusterReport {
+	t.Helper()
+	for _, report := range reports {
+		if report.Name == name {
+			return report
+		}
+	}
+	t.Fatalf("report %q not found in %#v", name, reports)
+	return output.ClusterReport{}
 }
 
 func TestWriteArtifactIndex_IncludesErrorAndWarningArtifacts(t *testing.T) {
