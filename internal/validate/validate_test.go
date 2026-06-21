@@ -229,6 +229,18 @@ func TestValidate_EmbeddedPlatformSchemas(t *testing.T) {
 				"spec":       map[string]interface{}{"numberOfReplicas": "3"},
 			},
 		},
+		{
+			APIVersion: "kyverno.io/v1",
+			Kind:       "ClusterPolicy",
+			Name:       "policy",
+			Identity:   "kyverno.io/v1|ClusterPolicy||policy",
+			Value: map[string]interface{}{
+				"apiVersion": "kyverno.io/v1",
+				"kind":       "ClusterPolicy",
+				"metadata":   map[string]interface{}{"name": "policy"},
+				"spec":       "invalid",
+			},
+		},
 	}
 
 	for _, resource := range tests {

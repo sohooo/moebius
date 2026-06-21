@@ -59,6 +59,16 @@ sources:
       - internal/validate/schemas/platform/keycloak/v1/k8s_keycloak_org_v2alpha1_KeycloakClient.json
     note: Compatibility holdover until KeycloakClient has an upstream CRD source again.
 
+  - component: kyverno
+    version: latest
+    source_type: github_release
+    repo: kyverno/kyverno
+    paths:
+      - kyverno-{version_nov}/config/crds/kyverno/*.yaml
+      - kyverno-{version_nov}/config/crds/policies.kyverno.io/*.yaml
+      - kyverno-{version_nov}/config/crds/policyreport/*.yaml
+      - kyverno-{version_nov}/config/crds/reports/*.yaml
+
   - component: longhorn
     version: latest
     source_type: github_release
