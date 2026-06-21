@@ -72,7 +72,7 @@ mobius-diff:
   image: ghcr.io/sohooo/moebius:vX.Y.Z
   variables:
     GIT_DEPTH: "0"
-    GITLAB_TOKEN: "${MOBIUS_GITLAB_TOKEN}"
+    GITLAB_API_TOKEN: "${MOBIUS_GITLAB_API_TOKEN}"
   script:
     - git fetch origin "${CI_MERGE_REQUEST_TARGET_BRANCH_NAME}:${CI_MERGE_REQUEST_TARGET_BRANCH_NAME}"
     - |
@@ -97,7 +97,9 @@ Base ref behavior:
 ## Documentation
 
 - GitLab CI guide: [docs/gitlab-ci.md](docs/gitlab-ci.md)
+- CLI reference: [docs/cli.md](docs/cli.md)
 - Configuration and layout: [docs/configuration.md](docs/configuration.md)
+- MR report guide: [docs/report.md](docs/report.md)
 - Troubleshooting: [docs/troubleshooting.md](docs/troubleshooting.md)
 - Releases and distribution: [docs/releases.md](docs/releases.md)
 - Schema bundles and maintenance: [docs/schema-bundles.md](docs/schema-bundles.md)

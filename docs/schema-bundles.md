@@ -15,6 +15,17 @@ Schema bundle inputs and outputs:
 - resolved source lock: [../schemas.lock.yaml](../schemas.lock.yaml)
 - embedded bundle: [../internal/validate/schemas](../internal/validate/schemas)
 
+## Which Versions Are Embedded?
+
+[../schemas.lock.yaml](../schemas.lock.yaml) is the source of truth for the schema versions embedded in a build. It records the resolved Kubernetes version and every platform schema source such as CloudNativePG, Kyverno, Cilium, Longhorn, Keycloak, and OpenBao.
+
+Use it to answer questions like:
+- which Kubernetes schema version is bundled?
+- which CNPG or Kyverno release supplied the CRD schemas?
+- whether a source uses an explicit version or a resolved `latest` version?
+
+Runtime validation uses the committed embedded bundle from [../internal/validate/schemas](../internal/validate/schemas). It does not fetch newer schema versions dynamically, so updating schema coverage requires refreshing and committing the bundle.
+
 ## Runtime Behavior
 
 Schema resolution order:

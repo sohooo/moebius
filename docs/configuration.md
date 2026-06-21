@@ -1,13 +1,12 @@
 # Configuration
 
-`møbius` supports three configuration sources for repository layout:
+`møbius` resolves repository layout configuration in this precedence order:
 
 1. built-in defaults
 2. optional repo-root `config.yaml`
 3. optional `MOBIUS_CONFIG_YAML`
 4. optional `MOBIUS_APPS_FILES`
-
-Targeted CLI overrides such as `--clusters-dir` and `--apps-files` apply on top.
+5. targeted CLI overrides such as `--clusters-dir` and `--apps-files`
 
 ## Default Layout
 

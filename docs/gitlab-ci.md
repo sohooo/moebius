@@ -29,6 +29,8 @@ The report is optimized for cloud platform review:
 | **Changes lists** | Links to individual resource diffs. |
 | **Artifacts** | Preserve rendered manifests, split resources, diffs, warnings, and preflight status for debugging. |
 
+For details on how reviewers should read each report section, see [report.md](report.md).
+
 ## Quickstart
 
 Use this job when the repository follows the default layout:

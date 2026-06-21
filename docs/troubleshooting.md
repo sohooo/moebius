@@ -67,14 +67,15 @@ How to verify:
   - `messages`
 
 Fix:
-- use `GITLAB_TOKEN` or `--gitlab-token`
+- use `GITLAB_API_TOKEN` or `--gitlab-token`
 - use a project, group, or bot token with API scope
+- `GITLAB_TOKEN` and `GITLAB_PRIVATE_TOKEN` are accepted aliases, but prefer `GITLAB_API_TOKEN` for new pipelines
 
 Example:
 
 ```yaml
 variables:
-  GITLAB_TOKEN: "${MOBIUS_GITLAB_TOKEN}"
+  GITLAB_API_TOKEN: "${MOBIUS_GITLAB_API_TOKEN}"
 ```
 
 ## Token can read but cannot publish the MR report
@@ -92,8 +93,10 @@ How to verify:
   - token can read the merge request but cannot update its description
 
 Fix:
-- replace `CI_JOB_TOKEN` with `GITLAB_TOKEN`
+- replace `CI_JOB_TOKEN` with `GITLAB_API_TOKEN`
 - use a write-capable GitLab API token
+
+`GITLAB_TOKEN` and `GITLAB_PRIVATE_TOKEN` remain supported aliases. `CI_JOB_TOKEN` is useful context inside GitLab jobs, but it is not a publishing token for the MR report.
 
 ## Invalid rendered YAML
 
@@ -180,6 +183,85 @@ How to verify:
 mobius clusters
 mobius diff --all-clusters
 ```
+
+## Cluster is missing when using multiple apps files
+
+What it means:
+- the selected cluster was not discoverable from the configured apps files
+- or the expected apps file exists only in a file name that `møbius` was not configured to load
+
+How to verify:
+
+```bash
+mobius clusters --apps-files apps.yaml,apps-dev.yaml
+mobius doctor --apps-files apps.yaml,apps-dev.yaml
+```
+
+Fix:
+- configure all apps files in [configuration.md](configuration.md), `MOBIUS_APPS_FILES`, or `--apps-files`
+- keep the list in precedence order, for example `apps.yaml,apps-dev.yaml`
+- remember that missing secondary files are skipped per cluster, but at least one configured apps file must exist for the cluster to be loadable
+
+## Resource is unvalidated or schema coverage is missing
+
+What it means:
+- the resource passed structural parsing, but no matching schema was available
+- the report may show this as `unvalidated`, a validation gap, or an Attention Required item for critical/high resources
+
+Why it happens:
+- the resource kind is a CRD that is not rendered in the current manifests
+- the embedded schema bundle does not include that CRD family or version
+- the CRD schema exists, but the resource uses a different API version
+
+Fix:
+- inspect the report's Validation Gaps and Attention Required sections; see [report.md](report.md)
+- check bundled schema versions in [schema-bundles.md](schema-bundles.md)
+- render the CRD together with the resources under review, or update the embedded schema bundle if the CRD is maintained as a shared platform schema
+
+## Helm dependency or chart repository authentication fails
+
+What it means:
+- Helm could not render one release before `møbius` could compare resources
+
+How to verify:
+- open `.mobius-out/errors/<state>--<cluster>--<release>.txt`
+- check whether the error mentions a missing dependency, repository authentication, OCI pull failure, or chart version lookup
+
+Fix:
+- make sure the GitLab job has the same Helm repository or registry credentials as the normal render path
+- run `helm dependency update` for local charts that require vendored dependencies
+- set `targetRevision` for remote and OCI charts
+- use `--render-error-mode warn-skip-release` only when reviewers should still see the rest of the report
+
+## GitLab CI cannot pull the GHCR image
+
+What it means:
+- the runner could not pull `ghcr.io/sohooo/moebius:vX.Y.Z`
+
+How to verify:
+- confirm the tag exists in GHCR for the same release version
+- check whether the GitLab runner requires registry authentication for GHCR
+- see [releases.md](releases.md) if the git tag exists but the image is missing
+
+Fix:
+- use an explicit semver image tag, not `latest`
+- add GitLab CI registry credentials for GHCR if your runner cannot pull public images anonymously
+- if the image was never published, inspect the GitHub Actions `container` job for the release tag
+
+## Report falls back to summary mode
+
+What it means:
+- the full GitLab MR report exceeded the configured comment size limit
+- `møbius` published a compact summary instead of the full detail
+
+How to verify:
+- inspect `.mobius-out/summary.json`
+- open `.mobius-out/index.md` and per-resource artifacts for the full detail
+
+Fix:
+- keep `.mobius-out/` as a job artifact
+- use `--comment-mode summary+artifacts` intentionally for large repos
+- raise `--max-comment-bytes` only if your GitLab instance accepts larger MR descriptions or notes
 
 ## Tag exists but GitHub Release or GHCR image is missing
 
