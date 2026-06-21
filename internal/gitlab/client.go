@@ -204,7 +204,7 @@ func (c *Client) do(ctx context.Context, method, path string, body any, maxRespo
 			Body:       strings.TrimSpace(string(data)),
 		}
 		if c.tokenKind == TokenKindJob && (resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusForbidden) {
-			apiErr.Hint = "CI_JOB_TOKEN is often read-only for merge request notes, set GITLAB_TOKEN or use --gitlab-token"
+			apiErr.Hint = "CI_JOB_TOKEN is often read-only for merge request publishing, set GITLAB_API_TOKEN or use --gitlab-token"
 		}
 		return resp.StatusCode, nil, apiErr
 	}

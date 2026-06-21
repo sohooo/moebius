@@ -127,6 +127,39 @@ func TestServicePost_FallsBackToSummaryArtifactsWhenCommentTooLarge(t *testing.T
 	}
 }
 
+func TestServicePost_FallsBackToSummaryArtifactsForDescriptionWhenBodyTooLarge(t *testing.T) {
+	client := &fakeNoteClient{}
+	service := &Service{
+		newClient: func(baseURL, token string, tokenKind gitlab.TokenKind) (NoteClient, error) { return client, nil },
+		resolve: func(opts cli.Options) (gitlab.Target, error) {
+			return gitlab.Target{ProjectID: "1", MergeRequestIID: "7", BaseURL: "https://gitlab.example/api/v4", Token: "token", TokenKind: gitlab.TokenKindPrivate}, nil
+		},
+	}
+
+	result, err := service.Post(context.Background(), cli.Options{
+		DiffMode:        cli.DiffModeSemantic,
+		CommentMode:     cli.CommentModeFull,
+		PublishTarget:   cli.PublishTargetDescription,
+		MaxCommentBytes: 400,
+		BaseRef:         "master",
+	}, sampleReports())
+	if err != nil {
+		t.Fatalf("Post returned error: %v", err)
+	}
+	if result.Action != "created" {
+		t.Fatalf("expected created action, got %q", result.Action)
+	}
+	if !strings.Contains(client.updatedDescription, descriptionStartMarker) || !strings.Contains(client.updatedDescription, descriptionEndMarker) {
+		t.Fatalf("expected managed description block:\n%s", client.updatedDescription)
+	}
+	if !strings.Contains(client.updatedDescription, "Status:** report truncated") {
+		t.Fatalf("expected truncated status in description:\n%s", client.updatedDescription)
+	}
+	if !strings.Contains(client.updatedDescription, "Compact summary mode") {
+		t.Fatalf("expected compact summary footer in description:\n%s", client.updatedDescription)
+	}
+}
+
 func TestServicePost_AppendsDescriptionBlockByDefault(t *testing.T) {
 	client := &fakeNoteClient{description: "Original MR description.\n"}
 	service := &Service{
@@ -235,6 +268,9 @@ func TestServicePreflight_ReportsPermissionFailure(t *testing.T) {
 	}
 	if len(status.Messages) == 0 || !strings.Contains(status.Messages[0], "CI_JOB_TOKEN is often read-only") {
 		t.Fatalf("expected descriptive permission message, got %#v", status.Messages)
+	}
+	if !strings.Contains(status.Messages[0], "GITLAB_API_TOKEN") {
+		t.Fatalf("expected preferred token guidance, got %#v", status.Messages)
 	}
 }
 

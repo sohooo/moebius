@@ -13,7 +13,7 @@ LDFLAGS := -X github.com/sohooo/moebius/internal/buildinfo.Version=$(VERSION) -X
 export GOCACHE
 export GOMODCACHE
 
-.PHONY: build test fmt tidy run clean verify help diff-markdown comment version schema-sync schema-verify
+.PHONY: build test fmt fmt-check tidy run clean verify help diff-markdown comment version schema-sync schema-verify
 
 build: $(BINARY)
 
@@ -26,6 +26,13 @@ test:
 
 fmt:
 	gofmt -w $(GOFILES)
+
+fmt-check:
+	@files="$$(gofmt -l $(GOFILES))"; \
+	if [ -n "$$files" ]; then \
+		printf 'gofmt needed for:\n%s\n' "$$files"; \
+		exit 1; \
+	fi
 
 tidy:
 	$(GO) mod tidy
@@ -42,7 +49,7 @@ comment:
 version:
 	./$(BINARY) version
 
-verify: fmt test build
+verify: fmt-check test build
 
 schema-sync:
 	$(GO) run ./cmd/schema-sync
@@ -58,6 +65,7 @@ help:
 		'build   Build the møbius binary at bin/møbius' \
 		'test    Run Go tests' \
 		'fmt     Format Go sources with gofmt' \
+		'fmt-check Check Go source formatting without modifying files' \
 		'tidy    Sync Go module dependencies' \
 		'run     Run "bin/møbius diff"' \
 		'diff-markdown  Run "bin/møbius diff --output-format markdown"' \

@@ -260,7 +260,7 @@ func describeMergeRequestReadFailure(err error) error {
 	}
 	switch apiErr.StatusCode {
 	case 401:
-		return fmt.Errorf("GitLab rejected the resolved token while reading the merge request; check GITLAB_TOKEN/--gitlab-token and ensure it is valid for this GitLab instance")
+		return fmt.Errorf("GitLab rejected the resolved token while reading the merge request; check GITLAB_API_TOKEN/--gitlab-token and ensure it is valid for this GitLab instance")
 	case 403:
 		return fmt.Errorf("resolved GitLab token can reach the API but cannot read the merge request; use a token with API scope and project access")
 	case 404:
@@ -277,10 +277,10 @@ func describeDescriptionUpdateFailure(err error, target gitlab.Target) error {
 	}
 	switch apiErr.StatusCode {
 	case 401:
-		return fmt.Errorf("resolved GitLab token from %s was rejected while testing merge request description updates; use GITLAB_TOKEN or --gitlab-token with a valid API token", target.TokenSource)
+		return fmt.Errorf("resolved GitLab token from %s was rejected while testing merge request description updates; use GITLAB_API_TOKEN or --gitlab-token with a valid API token", target.TokenSource)
 	case 403:
 		if target.TokenKind == gitlab.TokenKindJob {
-			return fmt.Errorf("resolved token from %s can read the merge request but cannot update its description; CI_JOB_TOKEN is often read-only, use GITLAB_TOKEN or --gitlab-token with API scope", target.TokenSource)
+			return fmt.Errorf("resolved token from %s can read the merge request but cannot update its description; CI_JOB_TOKEN is often read-only, use GITLAB_API_TOKEN or --gitlab-token with API scope", target.TokenSource)
 		}
 		return fmt.Errorf("resolved GitLab token from %s can reach the merge request but lacks permission to update its description; use a project, group, or bot token with API scope", target.TokenSource)
 	case 404:
@@ -297,7 +297,7 @@ func describeReadFailure(err error) error {
 	}
 	switch apiErr.StatusCode {
 	case 401:
-		return fmt.Errorf("GitLab rejected the resolved token while reading merge request notes; check GITLAB_TOKEN/--gitlab-token and ensure it is valid for this GitLab instance")
+		return fmt.Errorf("GitLab rejected the resolved token while reading merge request notes; check GITLAB_API_TOKEN/--gitlab-token and ensure it is valid for this GitLab instance")
 	case 403:
 		return fmt.Errorf("resolved GitLab token can reach the API but cannot read merge request notes; use a token with API scope and project access")
 	case 404:
@@ -314,10 +314,10 @@ func describeCreateFailure(err error, target gitlab.Target) error {
 	}
 	switch apiErr.StatusCode {
 	case 401:
-		return fmt.Errorf("resolved GitLab token from %s was rejected while testing merge request note creation; use GITLAB_TOKEN or --gitlab-token with a valid API token", target.TokenSource)
+		return fmt.Errorf("resolved GitLab token from %s was rejected while testing merge request note creation; use GITLAB_API_TOKEN or --gitlab-token with a valid API token", target.TokenSource)
 	case 403:
 		if target.TokenKind == gitlab.TokenKindJob {
-			return fmt.Errorf("resolved token from %s can read the merge request but cannot create MR notes; CI_JOB_TOKEN is often read-only for notes, use GITLAB_TOKEN or --gitlab-token with API scope", target.TokenSource)
+			return fmt.Errorf("resolved token from %s can read the merge request but cannot create MR notes; CI_JOB_TOKEN is often read-only for notes, use GITLAB_API_TOKEN or --gitlab-token with API scope", target.TokenSource)
 		}
 		return fmt.Errorf("resolved GitLab token from %s can reach the merge request but lacks permission to create MR notes; use a project, group, or bot token with API scope", target.TokenSource)
 	case 404:

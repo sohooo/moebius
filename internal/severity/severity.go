@@ -96,36 +96,42 @@ func baselineFindings(in Input) []Finding {
 		findings = append(findings, componentFinding)
 		return findings
 	}
-
-	switch in.Kind {
-	case "Namespace":
-		findings = append(findings, finding(LevelCritical, "platform", "Namespace changed", "", "", ""))
-	case "CustomResourceDefinition":
-		findings = append(findings, finding(LevelCritical, "platform", "CustomResourceDefinition changed", "", "", ""))
-	case "MutatingWebhookConfiguration", "ValidatingWebhookConfiguration":
-		findings = append(findings, finding(LevelCritical, "policy", fmt.Sprintf("%s changed", in.Kind), "", "", ""))
-	case "ClusterRole", "ClusterRoleBinding":
-		findings = append(findings, finding(LevelCritical, "security", fmt.Sprintf("%s changed", in.Kind), "", "", ""))
-	case "StorageClass", "PriorityClass", "APIService", "PersistentVolume":
-		findings = append(findings, finding(LevelCritical, "platform", fmt.Sprintf("%s changed", in.Kind), "", "", ""))
-	case "NetworkPolicy":
-		if in.State == "removed" {
-			findings = append(findings, finding(LevelCritical, "network", "NetworkPolicy removed", "", "", ""))
-		}
-	case "PodSecurityPolicy":
-		findings = append(findings, finding(LevelCritical, "security", "PodSecurityPolicy changed", "", "", ""))
-	case "Role", "RoleBinding", "ServiceAccount", "Ingress", "Gateway", "HTTPRoute", "VirtualService", "DestinationRule", "AuthorizationPolicy", "PeerAuthentication", "PodDisruptionBudget", "HorizontalPodAutoscaler":
-		findings = append(findings, finding(LevelHigh, categoryForKind(in.Kind), fmt.Sprintf("%s changed", in.Kind), "", "", ""))
-	case "PersistentVolumeClaim":
-		findings = append(findings, finding(LevelHigh, "storage", "PersistentVolumeClaim changed", "", "", ""))
-	case "ConfigMap", "Secret", "Deployment", "StatefulSet", "DaemonSet", "Service", "CronJob", "Job":
-		findings = append(findings, finding(LevelMedium, categoryForKind(in.Kind), fmt.Sprintf("%s changed", in.Kind), "", "", ""))
-	default:
-		if in.State == "added" && in.Namespace != "" {
-			findings = append(findings, finding(LevelInfo, "metadata", "supporting resource added", "", "", ""))
-		}
+	if genericFinding, ok := genericBaselineFinding(in); ok {
+		findings = append(findings, genericFinding)
 	}
 	return findings
+}
+
+func genericBaselineFinding(in Input) (Finding, bool) {
+	switch in.Kind {
+	case "Namespace":
+		return finding(LevelCritical, "platform", "Namespace changed", "", "", ""), true
+	case "CustomResourceDefinition":
+		return finding(LevelCritical, "platform", "CustomResourceDefinition changed", "", "", ""), true
+	case "MutatingWebhookConfiguration", "ValidatingWebhookConfiguration":
+		return finding(LevelCritical, "policy", fmt.Sprintf("%s changed", in.Kind), "", "", ""), true
+	case "ClusterRole", "ClusterRoleBinding":
+		return finding(LevelCritical, "security", fmt.Sprintf("%s changed", in.Kind), "", "", ""), true
+	case "StorageClass", "PriorityClass", "APIService", "PersistentVolume":
+		return finding(LevelCritical, "platform", fmt.Sprintf("%s changed", in.Kind), "", "", ""), true
+	case "NetworkPolicy":
+		if in.State == "removed" {
+			return finding(LevelCritical, "network", "NetworkPolicy removed", "", "", ""), true
+		}
+	case "PodSecurityPolicy":
+		return finding(LevelCritical, "security", "PodSecurityPolicy changed", "", "", ""), true
+	case "Role", "RoleBinding", "ServiceAccount", "Ingress", "Gateway", "HTTPRoute", "VirtualService", "DestinationRule", "AuthorizationPolicy", "PeerAuthentication", "PodDisruptionBudget", "HorizontalPodAutoscaler":
+		return finding(LevelHigh, categoryForKind(in.Kind), fmt.Sprintf("%s changed", in.Kind), "", "", ""), true
+	case "PersistentVolumeClaim":
+		return finding(LevelHigh, "storage", "PersistentVolumeClaim changed", "", "", ""), true
+	case "ConfigMap", "Secret", "Deployment", "StatefulSet", "DaemonSet", "Service", "CronJob", "Job":
+		return finding(LevelMedium, categoryForKind(in.Kind), fmt.Sprintf("%s changed", in.Kind), "", "", ""), true
+	default:
+		if in.State == "added" && in.Namespace != "" {
+			return finding(LevelInfo, "metadata", "supporting resource added", "", "", ""), true
+		}
+	}
+	return Finding{}, false
 }
 
 func assessPathFindings(in Input) []Finding {
@@ -140,88 +146,95 @@ func assessPathFindings(in Input) []Finding {
 			continue
 		}
 
-		switch {
-		case isMetadataOnlyPath(path):
-			findings = append(findings, finding(LevelLow, "metadata", fmt.Sprintf("metadata changed at `%s`", path), path, oldStr, newStr))
-		case path == "spec.replicas":
-			level := LevelMedium
-			if oldInt, okOld := intValue(change.Old); okOld {
-				if newInt, okNew := intValue(change.New); okNew {
-					if oldInt == 0 || newInt == 0 {
-						level = LevelHigh
-					} else {
-						delta := percentDelta(oldInt, newInt)
-						if delta >= 50 {
-							level = LevelHigh
-						}
-					}
-				}
-			}
-			findings = append(findings, finding(level, "capacity", fmt.Sprintf("replicas changed %s -> %s", oldStr, newStr), path, oldStr, newStr))
-		case isImagePath(path):
-			level := LevelHigh
-			reason := fmt.Sprintf("image changed %s -> %s", oldStr, newStr)
-			if registryChanged(oldStr, newStr) {
-				reason = fmt.Sprintf("image registry changed %s -> %s", oldStr, newStr)
-			}
-			findings = append(findings, finding(level, "workload", reason, path, oldStr, newStr))
-		case strings.HasSuffix(path, "imagePullPolicy"):
-			findings = append(findings, finding(LevelMedium, "workload", fmt.Sprintf("image pull policy changed %s -> %s", oldStr, newStr), path, oldStr, newStr))
-		case strings.Contains(path, ".resources.limits."):
-			level := LevelMedium
-			reason := fmt.Sprintf("resource limits changed at `%s`", path)
-			if change.New == nil || newStr == "" {
-				level = LevelHigh
-				reason = fmt.Sprintf("resource limits removed at `%s`", path)
-			}
-			findings = append(findings, finding(level, "capacity", reason, path, oldStr, newStr))
-		case strings.Contains(path, ".resources.requests."):
-			level := LevelMedium
-			reason := fmt.Sprintf("resource requests changed at `%s`", path)
-			if requestReduced(oldStr, newStr) {
-				reason = fmt.Sprintf("resource requests reduced at `%s`", path)
-			}
-			findings = append(findings, finding(level, "capacity", reason, path, oldStr, newStr))
-		case path == "spec.type":
-			level := LevelMedium
-			reason := fmt.Sprintf("service type changed %s -> %s", oldStr, newStr)
-			if (oldStr == "ClusterIP" || oldStr == "") && (newStr == "LoadBalancer" || newStr == "NodePort") {
-				level = LevelHigh
-			}
-			findings = append(findings, finding(level, "network", reason, path, oldStr, newStr))
-		case isIngressHostPath(path):
-			findings = append(findings, finding(LevelHigh, "network", fmt.Sprintf("ingress host changed at `%s`", path), path, oldStr, newStr))
-		case isIngressTLSPath(path):
-			findings = append(findings, finding(LevelHigh, "network", fmt.Sprintf("ingress TLS changed at `%s`", path), path, oldStr, newStr))
-		case isIngressPathPath(path):
-			findings = append(findings, finding(LevelHigh, "network", fmt.Sprintf("ingress path changed at `%s`", path), path, oldStr, newStr))
-		case strings.Contains(path, "securityContext"), path == "spec.serviceAccountName", path == "spec.hostNetwork", path == "spec.hostPID", path == "spec.hostIPC", strings.Contains(path, "privileged"), strings.Contains(path, "capabilities"), strings.Contains(path, "runAsUser"), strings.Contains(path, "runAsNonRoot"), strings.Contains(path, "automountServiceAccountToken"):
-			findings = append(findings, finding(LevelHigh, "security", fmt.Sprintf("security-sensitive setting changed at `%s`", path), path, oldStr, newStr))
-		case isProbePath(path):
-			level := LevelMedium
-			reason := fmt.Sprintf("probe configuration changed at `%s`", path)
-			if change.New == nil || newStr == "" {
-				level = LevelHigh
-				reason = fmt.Sprintf("probe configuration removed at `%s`", path)
-			}
-			findings = append(findings, finding(level, "workload", reason, path, oldStr, newStr))
-		case strings.Contains(path, "volumeClaimTemplates"), path == "spec.storageClassName", strings.Contains(path, "resources.requests.storage"), strings.Contains(path, "accessModes"):
-			findings = append(findings, finding(LevelHigh, "storage", fmt.Sprintf("storage configuration changed at `%s`", path), path, oldStr, newStr))
-		case path == "rules" || strings.HasPrefix(path, "rules[") || strings.Contains(path, ".rules"):
-			level := LevelHigh
-			if in.Kind == "ClusterRole" || in.Kind == "ClusterRoleBinding" {
-				level = LevelCritical
-			}
-			findings = append(findings, finding(level, "security", fmt.Sprintf("RBAC rules changed at `%s`", path), path, oldStr, newStr))
-		case strings.Contains(path, "clientConfig") || strings.Contains(path, "failurePolicy"):
-			if in.Kind == "MutatingWebhookConfiguration" || in.Kind == "ValidatingWebhookConfiguration" {
-				findings = append(findings, finding(LevelCritical, "policy", fmt.Sprintf("webhook policy changed at `%s`", path), path, oldStr, newStr))
-			}
-		case strings.Contains(path, ".env") || strings.Contains(path, ".command") || strings.Contains(path, ".args") || strings.Contains(path, ".tolerations") || strings.Contains(path, ".affinity") || strings.Contains(path, ".nodeSelector"):
-			findings = append(findings, finding(LevelMedium, "workload", fmt.Sprintf("workload behavior changed at `%s`", path), path, oldStr, newStr))
+		if genericFinding, ok := genericPathFinding(in, change, path, oldStr, newStr); ok {
+			findings = append(findings, genericFinding)
 		}
 	}
 	return findings
+}
+
+func genericPathFinding(in Input, change diff.Change, path, oldStr, newStr string) (Finding, bool) {
+	switch {
+	case isMetadataOnlyPath(path):
+		return finding(LevelLow, "metadata", fmt.Sprintf("metadata changed at `%s`", path), path, oldStr, newStr), true
+	case path == "spec.replicas":
+		level := LevelMedium
+		if oldInt, okOld := intValue(change.Old); okOld {
+			if newInt, okNew := intValue(change.New); okNew {
+				if oldInt == 0 || newInt == 0 {
+					level = LevelHigh
+				} else {
+					delta := percentDelta(oldInt, newInt)
+					if delta >= 50 {
+						level = LevelHigh
+					}
+				}
+			}
+		}
+		return finding(level, "capacity", fmt.Sprintf("replicas changed %s -> %s", oldStr, newStr), path, oldStr, newStr), true
+	case isImagePath(path):
+		level := LevelHigh
+		reason := fmt.Sprintf("image changed %s -> %s", oldStr, newStr)
+		if registryChanged(oldStr, newStr) {
+			reason = fmt.Sprintf("image registry changed %s -> %s", oldStr, newStr)
+		}
+		return finding(level, "workload", reason, path, oldStr, newStr), true
+	case strings.HasSuffix(path, "imagePullPolicy"):
+		return finding(LevelMedium, "workload", fmt.Sprintf("image pull policy changed %s -> %s", oldStr, newStr), path, oldStr, newStr), true
+	case strings.Contains(path, ".resources.limits."):
+		level := LevelMedium
+		reason := fmt.Sprintf("resource limits changed at `%s`", path)
+		if change.New == nil || newStr == "" {
+			level = LevelHigh
+			reason = fmt.Sprintf("resource limits removed at `%s`", path)
+		}
+		return finding(level, "capacity", reason, path, oldStr, newStr), true
+	case strings.Contains(path, ".resources.requests."):
+		level := LevelMedium
+		reason := fmt.Sprintf("resource requests changed at `%s`", path)
+		if requestReduced(oldStr, newStr) {
+			reason = fmt.Sprintf("resource requests reduced at `%s`", path)
+		}
+		return finding(level, "capacity", reason, path, oldStr, newStr), true
+	case path == "spec.type":
+		level := LevelMedium
+		reason := fmt.Sprintf("service type changed %s -> %s", oldStr, newStr)
+		if (oldStr == "ClusterIP" || oldStr == "") && (newStr == "LoadBalancer" || newStr == "NodePort") {
+			level = LevelHigh
+		}
+		return finding(level, "network", reason, path, oldStr, newStr), true
+	case isIngressHostPath(path):
+		return finding(LevelHigh, "network", fmt.Sprintf("ingress host changed at `%s`", path), path, oldStr, newStr), true
+	case isIngressTLSPath(path):
+		return finding(LevelHigh, "network", fmt.Sprintf("ingress TLS changed at `%s`", path), path, oldStr, newStr), true
+	case isIngressPathPath(path):
+		return finding(LevelHigh, "network", fmt.Sprintf("ingress path changed at `%s`", path), path, oldStr, newStr), true
+	case strings.Contains(path, "securityContext"), path == "spec.serviceAccountName", path == "spec.hostNetwork", path == "spec.hostPID", path == "spec.hostIPC", strings.Contains(path, "privileged"), strings.Contains(path, "capabilities"), strings.Contains(path, "runAsUser"), strings.Contains(path, "runAsNonRoot"), strings.Contains(path, "automountServiceAccountToken"):
+		return finding(LevelHigh, "security", fmt.Sprintf("security-sensitive setting changed at `%s`", path), path, oldStr, newStr), true
+	case isProbePath(path):
+		level := LevelMedium
+		reason := fmt.Sprintf("probe configuration changed at `%s`", path)
+		if change.New == nil || newStr == "" {
+			level = LevelHigh
+			reason = fmt.Sprintf("probe configuration removed at `%s`", path)
+		}
+		return finding(level, "workload", reason, path, oldStr, newStr), true
+	case strings.Contains(path, "volumeClaimTemplates"), path == "spec.storageClassName", strings.Contains(path, "resources.requests.storage"), strings.Contains(path, "accessModes"):
+		return finding(LevelHigh, "storage", fmt.Sprintf("storage configuration changed at `%s`", path), path, oldStr, newStr), true
+	case path == "rules" || strings.HasPrefix(path, "rules[") || strings.Contains(path, ".rules"):
+		level := LevelHigh
+		if in.Kind == "ClusterRole" || in.Kind == "ClusterRoleBinding" {
+			level = LevelCritical
+		}
+		return finding(level, "security", fmt.Sprintf("RBAC rules changed at `%s`", path), path, oldStr, newStr), true
+	case strings.Contains(path, "clientConfig") || strings.Contains(path, "failurePolicy"):
+		if in.Kind == "MutatingWebhookConfiguration" || in.Kind == "ValidatingWebhookConfiguration" {
+			return finding(LevelCritical, "policy", fmt.Sprintf("webhook policy changed at `%s`", path), path, oldStr, newStr), true
+		}
+	case strings.Contains(path, ".env") || strings.Contains(path, ".command") || strings.Contains(path, ".args") || strings.Contains(path, ".tolerations") || strings.Contains(path, ".affinity") || strings.Contains(path, ".nodeSelector"):
+		return finding(LevelMedium, "workload", fmt.Sprintf("workload behavior changed at `%s`", path), path, oldStr, newStr), true
+	}
+	return Finding{}, false
 }
 
 func finding(level Level, category, reason, path, old, new string) Finding {

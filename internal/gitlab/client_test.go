@@ -184,7 +184,7 @@ func TestClientReturnsHelpfulAPIError(t *testing.T) {
 	if !strings.Contains(err.Error(), "forbidden") {
 		t.Fatalf("expected response body in error, got %v", err)
 	}
-	if !strings.Contains(err.Error(), "set GITLAB_TOKEN or use --gitlab-token") {
+	if !strings.Contains(err.Error(), "set GITLAB_API_TOKEN or use --gitlab-token") {
 		t.Fatalf("expected token hint in error, got %v", err)
 	}
 }

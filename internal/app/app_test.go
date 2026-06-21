@@ -68,7 +68,7 @@ func TestRunCommentFallsBackToDiffOnPreflightFailure(t *testing.T) {
 				BaseURL:         "https://gitlab.example/api/v4",
 				TokenKind:       gitlab.TokenKindJob,
 				TokenSource:     "CI_JOB_TOKEN",
-				Messages:        []string{"resolved token can read the merge request but cannot create MR notes; CI_JOB_TOKEN is often read-only for notes, use GITLAB_TOKEN or --gitlab-token with API scope"},
+				Messages:        []string{"resolved token can read the merge request but cannot create MR notes; CI_JOB_TOKEN is often read-only for notes, use GITLAB_API_TOKEN or --gitlab-token with API scope"},
 			},
 			preflightErr: errors.New("preflight failed"),
 		}

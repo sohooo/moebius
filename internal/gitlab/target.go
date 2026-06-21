@@ -29,9 +29,9 @@ func ResolveTarget(opts cli.Options) (Target, error) {
 	mrIID := firstNonEmpty(opts.MergeRequestIID, os.Getenv("CI_MERGE_REQUEST_IID"))
 	apiToken, apiTokenSource := firstNonEmptyWithSource(
 		namedValue{Source: "--gitlab-token", Value: opts.GitLabToken},
+		namedValue{Source: "GITLAB_API_TOKEN", Value: os.Getenv("GITLAB_API_TOKEN")},
 		namedValue{Source: "GITLAB_TOKEN", Value: os.Getenv("GITLAB_TOKEN")},
 		namedValue{Source: "GITLAB_PRIVATE_TOKEN", Value: os.Getenv("GITLAB_PRIVATE_TOKEN")},
-		namedValue{Source: "GITLAB_API_TOKEN", Value: os.Getenv("GITLAB_API_TOKEN")},
 	)
 	jobToken := os.Getenv("CI_JOB_TOKEN")
 
@@ -45,7 +45,7 @@ func ResolveTarget(opts cli.Options) (Target, error) {
 		return Target{}, fmt.Errorf("missing GitLab API base URL; set CI_API_V4_URL/CI_SERVER_URL or use --gitlab-base-url")
 	}
 	if apiToken == "" && jobToken == "" {
-		return Target{}, fmt.Errorf("missing GitLab token; set GITLAB_TOKEN/GITLAB_PRIVATE_TOKEN or CI_JOB_TOKEN")
+		return Target{}, fmt.Errorf("missing GitLab token; set GITLAB_API_TOKEN or --gitlab-token; GITLAB_TOKEN and GITLAB_PRIVATE_TOKEN are accepted aliases")
 	}
 
 	token := apiToken

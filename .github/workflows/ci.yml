@@ -1,0 +1,51 @@
+name: ci
+
+on:
+  pull_request:
+  push:
+    branches:
+      - master
+
+permissions:
+  contents: read
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Check formatting
+        run: make fmt-check
+
+      - name: Verify schema bundle
+        run: make schema-verify
+
+      - name: Run tests
+        run: make test
+
+      - name: Build binary
+        run: make build
+
+      - name: Smoke test container image
+        run: |
+          set -euo pipefail
+          BUILD_DATE="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          docker build \
+            --build-arg MOBIUS_VERSION=ci \
+            --build-arg MOBIUS_COMMIT=${{ github.sha }} \
+            --build-arg MOBIUS_BUILD_DATE="${BUILD_DATE}" \
+            -t mobius:test .
+          docker run --rm mobius:test version
+          docker run --rm mobius:test diff --help >/dev/null
+          docker run --rm --entrypoint sh mobius:test -ec 'command -v git && command -v mobius && command -v møbius'
