@@ -1,26 +1,45 @@
-# GitLab CI Guide
+# GitLab MR Report Guide
 
-`møbius` is designed to run in a GitLab merge request pipeline, usually from the cluster configuration repository itself.
+## Purpose
 
-Its main CI job is:
-- render the effective cluster state at the merge-base
-- render the effective cluster state at the MR commit
-- compare both
-- publish the result as a managed merge request description block or as job output
+`møbius` is intended to run inside a GitLab merge request pipeline for the GitOps repository that defines Kubernetes clusters. The MR report answers one reviewer question:
 
-## Canonical MR Pipeline
+> What Kubernetes resources would this merge request actually add, remove, or change after Helm rendering, values overrides, and schema validation?
 
-Recommended pipeline job:
+The `møbius comment` job renders the cluster state at the merge-base and at the current MR commit, compares both rendered states, validates the current resources offline, and publishes a managed report block to the merge request description by default.
+
+```mermaid
+flowchart LR
+    A["MR commit"] --> C["møbius comment"]
+    B["Merge-base with target branch"] --> C
+    C --> D["Render Helm releases"]
+    D --> E["Split Kubernetes resources"]
+    E --> F["Compare and validate"]
+    F --> G["MR description report"]
+    F --> H[".mobius-out artifacts"]
+```
+
+The report is optimized for cloud platform review:
+
+| Report area | Purpose |
+| --- | --- |
+| **Review Focus** | Shows severity, surfaces, validation gaps, and the highest-risk resources first. |
+| **Navigation** | Links directly to changed clusters and charts. |
+| **Chart sections** | Groups changed resources by release/chart and summarizes severity, surface, change mix, and validation. |
+| **Changes lists** | Links to individual resource diffs. |
+| **Artifacts** | Preserve rendered manifests, split resources, diffs, warnings, and preflight status for debugging. |
+
+## Quickstart
+
+Use this job when the repository follows the default layout:
 
 ```yaml
 mobius-diff:
   stage: test
   image: ghcr.io/sohooo/moebius:vX.Y.Z
-  tags:
-    - k8s
   variables:
     GIT_DEPTH: "0"
-    GITLAB_TOKEN: "${MOBIUS_GITLAB_TOKEN}"
+    GITLAB_API_TOKEN: "${MOBIUS_GITLAB_API_TOKEN}"
   script:
     - git fetch origin "${CI_MERGE_REQUEST_TARGET_BRANCH_NAME}:${CI_MERGE_REQUEST_TARGET_BRANCH_NAME}"
     - |
@@ -33,70 +52,125 @@ mobius-diff:
       - .mobius-out/
 ```
 
-Why these settings matter:
-- `GIT_DEPTH: "0"` gives `møbius` enough history for merge-base calculation
-- the explicit `git fetch` makes the target branch ref available locally in detached MR jobs
-- `GITLAB_TOKEN` provides permission for `møbius comment` to update the MR description
-- `.mobius-out/` is the canonical debug surface
+Replace `vX.Y.Z` with a pinned release tag. Do not use an unpinned image tag for production pipelines.
+
+Why the defaults matter:
+
+| Setting | Why it is needed |
+| --- | --- |
+| `GIT_DEPTH: "0"` | Gives `møbius` enough history to calculate a merge-base. |
+| `git fetch origin "$CI_MERGE_REQUEST_TARGET_BRANCH_NAME:..."` | Makes the target branch available in detached MR jobs. |
+| `GITLAB_API_TOKEN` | Lets `møbius comment` update the MR description. |
+| `--base-ref "$CI_MERGE_REQUEST_TARGET_BRANCH_NAME"` | Compares the MR against the intended target branch. |
+| `--output-dir .mobius-out` | Keeps diagnostics and rendered artifacts available after success or failure. |
 
 ## Required Environment
 
-For `møbius comment`, the job needs:
-- `CI_PROJECT_ID`
-- `CI_MERGE_REQUEST_IID`
-- `CI_API_V4_URL` or `CI_SERVER_URL`
-- `GITLAB_TOKEN`, `GITLAB_PRIVATE_TOKEN`, `GITLAB_API_TOKEN`, or `--gitlab-token`
+### GitLab CI Variables
+
+For `møbius comment`, GitLab normally provides most MR context automatically:
+
+| Variable or option | Required | Purpose |
+| --- | --- | --- |
+| `CI_PROJECT_ID` or `--project-id` | yes | GitLab project containing the MR. |
+| `CI_MERGE_REQUEST_IID` or `--mr-iid` | yes | Merge request IID, not the global MR ID. |
+| `CI_API_V4_URL` or `CI_SERVER_URL` or `--gitlab-base-url` | yes | GitLab API endpoint. |
+| `GITLAB_API_TOKEN` or `--gitlab-token` | yes | Write-capable API token for publishing the report. |
+| `GITLAB_TOKEN` or `GITLAB_PRIVATE_TOKEN` | supported | Alternative token variable names accepted by `møbius`. Prefer `GITLAB_API_TOKEN` for new pipelines. |
+| `CI_JOB_TOKEN` | no | Informational only: this usually cannot update MR descriptions or create MR notes, so it does not work for publishing the report. |
+| `CI_MERGE_REQUEST_TARGET_BRANCH_NAME` | recommended | Used by the quickstart fetch and `--base-ref`. |
 
 Recommended token model:
-- use a project, group, or bot token with API scope
-- treat `CI_JOB_TOKEN` as fallback only
 
-`CI_JOB_TOKEN` often cannot create or update merge request notes, even when it can read the MR.
-By default, `møbius comment` publishes a managed report block at the bottom of the MR description. Use `--publish-target note` to keep the legacy sticky-note behavior.
+- Use a project, group, or bot token with API scope.
+- Store it as a masked CI/CD variable such as `MOBIUS_GITLAB_API_TOKEN`.
+- Assign it to `GITLAB_API_TOKEN` in the job.
+- Do not rely on `CI_JOB_TOKEN`; it is useful context for GitLab jobs but is not a publishing token for the MR report.
 
-## Comment Preflight
+For local usage outside CI, see the [local quickstart in the README](../README.md#quickstart).
 
-Before posting, `møbius comment` validates:
-- project ID
-- merge request IID
-- GitLab API base URL
-- resolved token source and kind
-- ability to reach the GitLab MR API
-- ability to update the MR description, or notes when `--publish-target note` is used
+### Repository Layout
 
-If preflight fails, `møbius comment`:
-- still builds the diff report
-- writes any available artifacts
-- prints a concise failure summary
-- falls back to printing the diff report to stdout
-- exits non-zero
+The default repository layout is:
 
-## Artifacts
-
-When `--output-dir .mobius-out` is used, `møbius` writes:
-
-- `.mobius-out/index.md`
-- `.mobius-out/summary.json`
-- `.mobius-out/comment-preflight.json`
-- `.mobius-out/current/...`
-- `.mobius-out/baseline/...`
-- `.mobius-out/diff/...`
-- `.mobius-out/errors/<state>--<cluster>--<release>.txt`
-- `.mobius-out/warnings/<state>--<cluster>--<release>.txt`
-
-Use these artifacts first when debugging CI failures.
-
-For a fast local preflight before touching CI, run:
-
-```bash
-mobius doctor
+```text
+clusters/
+  kube-bravo/
+    apps.yaml
+    apps-dev.yaml              # optional, if configured
+    overrides/
+      default/
+        hello-world.yaml
+      hello-world.yaml         # fallback
+charts/
+  hello-world/
+    Chart.yaml
+    templates/
 ```
 
-If GitLab-related environment variables or tokens are already present, `mobius doctor` also performs a live GitLab MR publish-readiness check. Without GitLab context, it stays local and reports that the GitLab checks were skipped.
+Default release definitions live in `clusters/<cluster>/apps.yaml`. Each apps file is a top-level YAML list:
 
-## Common Variants
+```yaml
+- name: hello-world
+  namespace: demo
+  project: default
+  chart: charts/hello-world
+```
 
-If you want CI to keep reporting the rest when one release renders invalid YAML:
+For remote Helm repositories:
+
+```yaml
+- name: external-dns
+  namespace: external-dns
+  project: default
+  repoURL: https://kubernetes-sigs.github.io/external-dns/
+  chart: external-dns
+  targetRevision: 1.15.0
+```
+
+For OCI charts, use an OCI chart reference and always set `targetRevision`:
+
+```yaml
+- name: argo-cd
+  namespace: argocd
+  project: default
+  repoURL: oci://registry.example.com/platform
+  chart: argo-cd
+  targetRevision: 7.8.0
+```
+
+### Override Resolution
+
+For every release, `møbius` looks for values overrides in this order:
+
+| Path | Meaning |
+| --- | --- |
+| `clusters/<cluster>/overrides/<project>/<name>.yaml` | Primary default path. |
+| `clusters/<cluster>/overrides/<name>.yaml` | Fallback default path. |
+| no file | Render with chart defaults. |
+
+Overrides are shared for all configured apps files. For example, a release defined in `apps-dev.yaml` still uses `overrides/<project>/<name>.yaml`.
+
+## Customization Options
+
+### Common CLI Options
+
+| Option | Use when |
+| --- | --- |
+| `--cluster kube-bravo` | Limit the report to one cluster. |
+| `--all-clusters` | Render all current clusters instead of only changed clusters. |
+| `--apps-files apps.yaml,apps-dev.yaml` | Load multiple apps files per cluster. Earlier files win on duplicate release names. |
+| `--clusters-dir environments` | Use a cluster root other than `clusters/`. |
+| `--publish-target note` | Publish a sticky MR note instead of updating the MR description. |
+| `--comment-mode summary` | Publish a compact report. |
+| `--comment-mode summary+artifacts` | Publish a compact report and rely on artifacts for details. |
+| `--render-error-mode warn-skip-release` | Keep reporting other releases when one release cannot render. |
+| `--duplicate-key-mode warn-last-wins` | Accept duplicate YAML keys from rendered manifests and keep the last value. |
+| `--max-comment-bytes 75000` | Change the threshold before comment output falls back to summary mode. |
+
+### Multiple Apps Files
+
+Configure multiple apps files through CLI:
 
 ```yaml
 script:
@@ -104,37 +178,42 @@ script:
   - |
     møbius comment \
       --base-ref "${CI_MERGE_REQUEST_TARGET_BRANCH_NAME}" \
-      --render-error-mode warn-skip-release \
+      --apps-files apps.yaml,apps-dev.yaml \
       --output-dir .mobius-out
 ```
 
-If a third-party chart emits duplicate YAML keys and you need permissive last-key-wins parsing:
+Or through environment:
 
 ```yaml
-script:
-  - git fetch origin "${CI_MERGE_REQUEST_TARGET_BRANCH_NAME}:${CI_MERGE_REQUEST_TARGET_BRANCH_NAME}"
-  - |
-    møbius comment \
-      --base-ref "${CI_MERGE_REQUEST_TARGET_BRANCH_NAME}" \
-      --duplicate-key-mode warn-last-wins \
-      --output-dir .mobius-out
+variables:
+  MOBIUS_APPS_FILES: "apps.yaml,apps-dev.yaml"
 ```
 
-If you only want job output and no MR description update:
+Precedence is first-wins. If `apps.yaml` and `apps-dev.yaml` define the same release name, the release from `apps.yaml` is used and the later duplicate is ignored.
+
+### Custom Layout
+
+Use a checked-in `config.yaml` when the whole repository follows a custom convention:
 
 ```yaml
-script:
-  - git fetch origin "${CI_MERGE_REQUEST_TARGET_BRANCH_NAME}:${CI_MERGE_REQUEST_TARGET_BRANCH_NAME}"
-  - |
-    møbius diff \
-      --base-ref "${CI_MERGE_REQUEST_TARGET_BRANCH_NAME}" \
-      --output-format markdown \
-      --output-dir .mobius-out
+layout:
+  clusters_dir: environments
+  apps:
+    files:
+      - releases.yaml
+    fields:
+      name: release_name
+      namespace: target_namespace
+      project: argocd_project
+      repoURL: repo_url
+      chart: chart_ref
+      targetRevision: chart_target_revision
+  overrides:
+    path: values/{project}/{name}.yaml
+    fallback_path: values/{name}.yaml
 ```
 
-## Custom Layouts
-
-If the repo does not use the default layout, pass `MOBIUS_CONFIG_YAML`:
+Use `MOBIUS_CONFIG_YAML` when the CI job needs to inject the layout without committing a config file:
 
 ```yaml
 variables:
@@ -156,12 +235,105 @@ variables:
         fallback_path: values/{name}.yaml
 ```
 
+Configuration precedence:
+
+| Priority | Source |
+| --- | --- |
+| 1 | Built-in defaults |
+| 2 | repo-root `config.yaml` |
+| 3 | `MOBIUS_CONFIG_YAML` |
+| 4 | `MOBIUS_APPS_FILES` |
+| 5 | CLI overrides such as `--clusters-dir` and `--apps-files` |
+
 More detail is in [configuration.md](configuration.md).
+
+## Common Pipeline Variants
+
+Continue when one release fails to render:
+
+```yaml
+script:
+  - git fetch origin "${CI_MERGE_REQUEST_TARGET_BRANCH_NAME}:${CI_MERGE_REQUEST_TARGET_BRANCH_NAME}"
+  - |
+    møbius comment \
+      --base-ref "${CI_MERGE_REQUEST_TARGET_BRANCH_NAME}" \
+      --render-error-mode warn-skip-release \
+      --output-dir .mobius-out
+```
+
+Accept duplicate YAML keys emitted by a chart:
+
+```yaml
+script:
+  - git fetch origin "${CI_MERGE_REQUEST_TARGET_BRANCH_NAME}:${CI_MERGE_REQUEST_TARGET_BRANCH_NAME}"
+  - |
+    møbius comment \
+      --base-ref "${CI_MERGE_REQUEST_TARGET_BRANCH_NAME}" \
+      --duplicate-key-mode warn-last-wins \
+      --output-dir .mobius-out
+```
+
+Print markdown to the job log without updating the MR:
+
+```yaml
+script:
+  - git fetch origin "${CI_MERGE_REQUEST_TARGET_BRANCH_NAME}:${CI_MERGE_REQUEST_TARGET_BRANCH_NAME}"
+  - |
+    møbius diff \
+      --base-ref "${CI_MERGE_REQUEST_TARGET_BRANCH_NAME}" \
+      --output-format markdown \
+      --output-dir .mobius-out
+```
+
+## Comment Preflight
+
+Before posting, `møbius comment` validates:
+
+- project ID
+- merge request IID
+- GitLab API base URL
+- resolved token source and kind
+- ability to reach the GitLab MR API
+- ability to update the MR description, or notes when `--publish-target note` is used
+
+If preflight fails, `møbius comment` still builds the diff report, writes available artifacts, prints a concise failure summary, falls back to printing the report to stdout, and exits non-zero.
+
+For a fast local preflight before touching CI, run:
+
+```bash
+mobius doctor
+```
+
+If GitLab-related environment variables or tokens are present, `mobius doctor` also performs a live GitLab publish-readiness check. Without GitLab context, it stays local and reports that GitLab checks were skipped.
+
+## Artifacts
+
+When `--output-dir .mobius-out` is used, `møbius` writes:
+
+| Path | Contents |
+| --- | --- |
+| `.mobius-out/index.md` | Human-readable artifact index and cluster summary. |
+| `.mobius-out/summary.json` | Machine-readable summary counts and artifact names. |
+| `.mobius-out/comment-preflight.json` | GitLab publish preflight status. |
+| `.mobius-out/current/...` | Current rendered manifests and split resources. |
+| `.mobius-out/baseline/...` | Merge-base rendered manifests and split resources. |
+| `.mobius-out/diff/...` | Per-resource raw and semantic diffs. |
+| `.mobius-out/errors/<state>--<cluster>--<release>.txt` | Render or split errors captured during report generation. |
+| `.mobius-out/warnings/<state>--<cluster>--<release>.txt` | Missing chart versions, duplicate key warnings, and other non-fatal render notices. |
 
 ## Failure Triage
 
-Start here:
-1. open `.mobius-out/comment-preflight.json`
-2. open `.mobius-out/index.md`
-3. inspect `.mobius-out/errors/` and `.mobius-out/warnings/`
-4. if the failure is GitLab-specific, see [troubleshooting.md](troubleshooting.md)
+Start with the artifacts:
+
+1. Open `.mobius-out/comment-preflight.json`.
+2. Open `.mobius-out/index.md`.
+3. Inspect `.mobius-out/errors/` and `.mobius-out/warnings/`.
+4. If the failure is GitLab-specific, see [troubleshooting.md](troubleshooting.md).
+
+Useful local checks:
+
+```bash
+mobius clusters
+mobius doctor
+mobius diff --all-clusters --output-dir .mobius-out
+```
