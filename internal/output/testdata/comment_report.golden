@@ -2,6 +2,17 @@
 
 **Status:** changes detected
 
+**Review Focus**
+
+- Severity: 🔴 1 · 🟠 1
+- Surfaces: security · workload
+- Changes: +0 · -0 · ~2
+- Validation: 0 errors · 0 warnings · 1 unvalidated
+
+**Attention Required**
+- 🔴 `kube-bravo` · `hello-world` · [`ClusterRole/hello-world`](#resource-kube-bravo-clusterrole-hello-world) · security · unvalidated high-severity resource: RBAC rules changed at `rules`
+- 🟠 `kube-bravo` · `hello-world` · [`Deployment/hello-world`](#resource-kube-bravo-deployment-hello-world) · workload · replicas changed 2 -> 3
+
 ---
 
 **Navigation**
@@ -24,6 +35,11 @@
 | **Scope** | value-level tweaks only |
 | **Severity** | 🔴 critical 1 · 🟠 high 1 |
 | **Validation** | 0 errors · 0 warnings · 1 unvalidated |
+| **Validation gaps** | 1 resource(s) without schema coverage; 1 critical/high need manual review |
+
+**Review Hints**
+- Check whether new permissions are intentionally scoped.
+- Manually review resources without schema coverage.
 
 **Changes**
 - 🔴 [`ClusterRole/hello-world`](#resource-kube-bravo-clusterrole-hello-world) · RBAC rules changed at `rules`

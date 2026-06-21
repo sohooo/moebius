@@ -507,6 +507,110 @@ func TestRenderCommentBody_DoesNotRenderHighlights(t *testing.T) {
 	}
 }
 
+func TestRenderDescriptionBody_IncludesReviewChecklist(t *testing.T) {
+	body, err := RenderDescriptionBodyWithOptions([]ClusterReport{sampleClusterReport()}, diff.ModeSemantic, NoteMetadata{CommitSHA: "deadbeef"}, NoteRenderOptions{
+		Mode:   cli.CommentModeFull,
+		Status: "changes detected",
+	})
+	if err != nil {
+		t.Fatalf("RenderDescriptionBodyWithOptions returned error: %v", err)
+	}
+	for _, needle := range []string{
+		"**Review Focus**",
+		"**Attention Required**",
+		"**Review Checklist**",
+		"- [ ] Critical/high security changes reviewed",
+		"- [ ] Unvalidated resources manually checked",
+	} {
+		if !strings.Contains(body, needle) {
+			t.Fatalf("expected description body to contain %q:\n%s", needle, body)
+		}
+	}
+	if strings.Index(body, "**Review Focus**") > strings.Index(body, "**Navigation**") {
+		t.Fatalf("expected review focus before navigation:\n%s", body)
+	}
+}
+
+func TestRenderCommentBody_NoChangesOmitsReviewFocus(t *testing.T) {
+	body, err := RenderCommentBody(nil, diff.ModeSemantic, NoteMetadata{CommitSHA: "deadbeef"})
+	if err != nil {
+		t.Fatalf("RenderCommentBody returned error: %v", err)
+	}
+	if strings.Contains(body, "**Review Focus**") || strings.Contains(body, "**Attention Required**") || strings.Contains(body, "**Review Checklist**") {
+		t.Fatalf("expected no review sections for no-change report:\n%s", body)
+	}
+}
+
+func TestRenderCommentBody_CapsAttentionRequired(t *testing.T) {
+	resources := make([]ResourceReport, 0, 7)
+	for i := 0; i < 7; i++ {
+		resources = append(resources, ResourceReport{
+			State:     "changed",
+			Kind:      "Deployment",
+			Name:      "app-" + string(rune('a'+i)),
+			Namespace: "demo",
+			Assessment: severity.Assessment{
+				Level: severity.LevelHigh,
+				Findings: []severity.Finding{{
+					Level:    severity.LevelHigh,
+					Category: "workload",
+					Reason:   "image changed old -> new",
+				}},
+			},
+			Validation: validate.Result{Status: validate.StatusValid, Coverage: validate.CoverageValidated},
+		})
+	}
+	report := ClusterReport{
+		Name:    "kube-bravo",
+		Changed: len(resources),
+		Charts:  []ChartReport{{Name: "many", Namespace: "demo", Resources: resources}},
+	}
+
+	body, err := RenderCommentBody([]ClusterReport{report}, diff.ModeSemantic, NoteMetadata{CommitSHA: "deadbeef"})
+	if err != nil {
+		t.Fatalf("RenderCommentBody returned error: %v", err)
+	}
+	attentionBlock := body[strings.Index(body, "**Attention Required**"):strings.Index(body, "---")]
+	if got := strings.Count(attentionBlock, "- 🟠"); got != 5 {
+		t.Fatalf("expected 5 visible attention items, got %d:\n%s", got, attentionBlock)
+	}
+	if !strings.Contains(attentionBlock, "- 2 additional attention item(s) in chart details") {
+		t.Fatalf("expected capped attention overflow note:\n%s", attentionBlock)
+	}
+}
+
+func TestRenderCommentBody_RendersReviewHintsForPlatformSignals(t *testing.T) {
+	report := ClusterReport{
+		Name:    "kube-bravo",
+		Changed: 4,
+		Charts: []ChartReport{{
+			Name:      "platform",
+			Namespace: "platform",
+			Resources: []ResourceReport{
+				reviewHintResource("MutatingWebhookConfiguration", "policy", "", severity.LevelCritical, "webhook policy changed at `webhooks[0].failurePolicy`", "policy"),
+				reviewHintResource("Ingress", "edge", "platform", severity.LevelHigh, "ingress TLS changed at `spec.tls`", "network"),
+				reviewHintResource("PersistentVolumeClaim", "data", "platform", severity.LevelHigh, "storage configuration changed at `spec.resources.requests.storage`", "storage"),
+				reviewHintResource("Deployment", "app", "platform", severity.LevelHigh, "image changed old -> new", "workload"),
+			},
+		}},
+	}
+
+	body, err := RenderCommentBody([]ClusterReport{report}, diff.ModeSemantic, NoteMetadata{CommitSHA: "deadbeef"})
+	if err != nil {
+		t.Fatalf("RenderCommentBody returned error: %v", err)
+	}
+	for _, needle := range []string{
+		"- Check webhook failure policy, service reachability, and admission impact.",
+		"- Check external reachability, hostnames, and TLS changes.",
+		"- Check persistence, reclaim policy, backup, and migration impact.",
+		"- Check image source, tag, and rollout expectations.",
+	} {
+		if !strings.Contains(body, needle) {
+			t.Fatalf("expected review hint %q:\n%s", needle, body)
+		}
+	}
+}
+
 func TestRenderCommentBody_FooterUsesCompactMetadataLinks(t *testing.T) {
 	body, err := RenderCommentBody([]ClusterReport{sampleClusterReport()}, diff.ModeSemantic, NoteMetadata{
 		PipelineURL: "https://gitlab.example/pipelines/123",
@@ -596,6 +700,24 @@ func TestRenderCommentBody_IncludesPermissivePartialAnalysisWarning(t *testing.T
 	}
 	if !strings.Contains(body, "| **Summary** | 1 resource affected · highest severity 🟠 high · analysis partial |") {
 		t.Fatalf("expected chart summary table with partial analysis in body, got %s", body)
+	}
+}
+
+func reviewHintResource(kind, name, namespace string, level severity.Level, reason, category string) ResourceReport {
+	return ResourceReport{
+		State:     "changed",
+		Kind:      kind,
+		Name:      name,
+		Namespace: namespace,
+		Assessment: severity.Assessment{
+			Level: level,
+			Findings: []severity.Finding{{
+				Level:    level,
+				Category: category,
+				Reason:   reason,
+			}},
+		},
+		Validation: validate.Result{Status: validate.StatusValid, Coverage: validate.CoverageValidated},
 	}
 }
 

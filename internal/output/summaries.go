@@ -290,6 +290,9 @@ func renderChartSignalTable(b *strings.Builder, chart ChartReport, added, remove
 	if errors > 0 || warnings > 0 || unvalidated > 0 {
 		fmt.Fprintf(b, "| **Validation** | %d errors · %d warnings · %d unvalidated |\n", errors, warnings, unvalidated)
 	}
+	if gap := validationGapLine(chart); gap != "" {
+		fmt.Fprintf(b, "| **Validation gaps** | %s |\n", escapeTable(gap))
+	}
 	fmt.Fprintln(b)
 }
 

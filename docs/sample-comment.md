@@ -2,31 +2,62 @@
 
 **Status:** changes detected
 
+**Review Focus**
+
+- Severity: 🔴 1 · 🟠 1
+- Surfaces: security · workload
+- Changes: +0 · -0 · ~2
+- Validation: 0 errors · 0 warnings · 1 unvalidated
+
+**Attention Required**
+- 🔴 `kube-bravo` · `hello-world` · [`ClusterRole/hello-world`](#resource-kube-bravo-clusterrole-hello-world) · security · unvalidated high-severity resource: RBAC rules changed at `rules`
+- 🟠 `kube-bravo` · `hello-world` · [`Deployment/hello-world`](#resource-kube-bravo-deployment-hello-world) · workload · replicas changed 2 -> 3
+
 ---
 
 **Navigation**
 
-- [kube-bravo](#cluster-kube-bravo) · added 0 · removed 0 · changed 1 · severity: 🟠 1
+- [kube-bravo](#cluster-kube-bravo) · added 0 · removed 0 · changed 2 · severity: 🔴 1 · 🟠 1
 
 <a id="cluster-kube-bravo"></a>
 ## Cluster `kube-bravo`
 
 <a id="chart-kube-bravo-hello-world"></a>
 <details>
-<summary>Chart `hello-world` · namespace `hello-world` · severity 🟠 · +0 · -0 · ~1</summary>
+<summary>Chart `hello-world` · namespace `demo` · severity 🔴 · +0 · -0 · ~2</summary>
 
 | Signal | Details |
 | --- | --- |
-| **Summary** | 1 resource affected · highest severity 🟠 high |
-| **Kinds** | `Deployment` |
-| **Change mix** | +0 · -0 · ~1 |
-| **Surface** | workload |
+| **Summary** | 2 resources affected · highest severity 🔴 critical |
+| **Kinds** | `ClusterRole`, `Deployment` |
+| **Change mix** | +0 · -0 · ~2 |
+| **Surface** | security · workload |
 | **Scope** | value-level tweaks only |
-| **Severity** | 🟠 high 1 |
-| **Validation** | 0 errors · 0 warnings · 0 unvalidated |
+| **Severity** | 🔴 critical 1 · 🟠 high 1 |
+| **Validation** | 0 errors · 0 warnings · 1 unvalidated |
+| **Validation gaps** | 1 resource(s) without schema coverage; 1 critical/high need manual review |
+
+**Review Hints**
+- Check whether new permissions are intentionally scoped.
+- Manually review resources without schema coverage.
 
 **Changes**
+- 🔴 [`ClusterRole/hello-world`](#resource-kube-bravo-clusterrole-hello-world) · RBAC rules changed at `rules`
 - 🟠 [`Deployment/hello-world`](#resource-kube-bravo-deployment-hello-world) · replicas changed 2 -> 3
+
+<a id="resource-kube-bravo-clusterrole-hello-world"></a>
+#### Resource `kube-bravo · ClusterRole/hello-world` (changed, severity: critical)
+
+- changed · severity 🔴 critical · validation: unvalidated (no schema available) · [up](#chart-kube-bravo-hello-world)
+
+```diff
+# Path: rules (changed)
+- rules:
+-     - get
++ rules:
++     - get
++     - list
+```
 
 <a id="resource-kube-bravo-deployment-hello-world"></a>
 #### Resource `kube-bravo · Deployment/hello-world` (changed, severity: high)
@@ -38,19 +69,12 @@
 spec:
 -     replicas: 2
 +     replicas: 3
-
-# Path: spec.template.spec.containers[name=hello-world].imagePullPolicy (changed)
-spec:
-    template:
-        spec:
-            containers:
-                - name: hello-world
--                     imagePullPolicy: IfNotPresent
-+                     imagePullPolicy: Always
 ```
 
 </details>
 
 ---
 
-_Report compares merge-base and current MR state | validation: clean | commit: `deadbeef` | [pipeline](https://gitlab.example/pipelines/123)._
+_Report compares merge-base and current MR state | validation: 0 errors, 0 warnings, 1 unvalidated | commit: `deadbeef` | base ref: `master` | diff mode: `semantic` | generated: `2026-04-05T12:00:00Z`._
+
+<!-- mobius:mr-diff -->

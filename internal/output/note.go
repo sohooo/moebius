@@ -49,6 +49,10 @@ func renderReportBodyWithOptions(reports []ClusterReport, mode diff.Mode, meta N
 	sortReportsForComment(renderedReports)
 	stats := collectReportStats(renderedReports)
 	renderPartialAnalysisWarnings(&b, stats)
+	renderReviewFocus(&b, renderedReports, opts.target)
+	if opts.target == renderTargetDescription && opts.Mode == cli.CommentModeFull {
+		renderReviewChecklist(&b, renderedReports)
+	}
 	fmt.Fprintln(&b, "---")
 	fmt.Fprintln(&b)
 	renderCommentTOC(&b, renderedReports, opts.target)
@@ -103,6 +107,7 @@ func renderClusterComment(report ClusterReport, mode diff.Mode, opts NoteRenderO
 			fmt.Fprintln(&b)
 		}
 		renderChartSignalTable(&b, chart, added, removed, changed)
+		renderChartReviewHints(&b, chart)
 		linkChanges := opts.Mode == cli.CommentModeFull
 		changes := collectChartResourceChanges(report.Name, chart, opts.target, linkChanges)
 		if len(changes) > 0 {
