@@ -166,6 +166,58 @@ data:
 	}
 }
 
+func TestRenderClusterWarnSkipReleaseSkipsRenderFailure(t *testing.T) {
+	root := t.TempDir()
+	layout := config.Default().Layout
+	clusterDir := config.ClusterDir(root, layout, "kube-bravo")
+	outputRoot := filepath.Join(root, "out", "current")
+	cacheDir := filepath.Join(root, "cache")
+
+	writeReportTestFile(t, filepath.Join(root, "charts", "broken", "Chart.yaml"), "apiVersion: v2\nname: broken\nversion: 0.1.0\n")
+	writeReportTestFile(t, filepath.Join(root, "charts", "broken", "templates", "configmap.yaml"), `apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ required "name required" .Values.name }}
+`)
+	writeReportTestFile(t, filepath.Join(root, "charts", "ok", "Chart.yaml"), "apiVersion: v2\nname: ok\nversion: 0.1.0\n")
+	writeReportTestFile(t, filepath.Join(root, "charts", "ok", "templates", "configmap.yaml"), `apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ .Release.Name }}
+`)
+	writeReportTestFile(t, filepath.Join(clusterDir, "apps.yaml"), `- name: broken
+  namespace: demo
+  project: default
+  chart: charts/broken
+- name: ok
+  namespace: demo
+  project: default
+  chart: charts/ok
+`)
+
+	err := renderCluster(root, layout, "kube-bravo", "current", outputRoot, helmrender.New(cacheDir), cli.RenderErrorModeWarnSkipRelease, cli.DuplicateKeyModeError)
+	if err != nil {
+		t.Fatalf("renderCluster returned error: %v", err)
+	}
+	warningPath := filepath.Join(outputRoot, "kube-bravo", "broken", renderWarningFilename)
+	warning, err := os.ReadFile(warningPath)
+	if err != nil {
+		t.Fatalf("expected skipped release warning: %v", err)
+	}
+	for _, needle := range []string{
+		`cluster "kube-bravo" release "broken"`,
+		`chart "charts/broken" failed to render current manifests`,
+		`name required`,
+	} {
+		if !strings.Contains(string(warning), needle) {
+			t.Fatalf("expected warning to contain %q, got:\n%s", needle, string(warning))
+		}
+	}
+	if _, err := os.Stat(filepath.Join(outputRoot, "kube-bravo", "ok", "rendered.yaml")); err != nil {
+		t.Fatalf("expected ok release rendered output: %v", err)
+	}
+}
+
 func TestBuildRendersMergeBaseCurrentAndSelectedClusters(t *testing.T) {
 	root := t.TempDir()
 	repo, err := git.PlainInit(root, false)

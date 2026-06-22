@@ -34,23 +34,15 @@ func renderCluster(root string, layout config.LayoutConfig, cluster, state, outp
 		chartRef := release.ChartReference()
 		rendered, err := renderer.Render(root, chartRef, release.RepoURL, release.TargetRevision, release.Name, release.Namespace, overridePath)
 		if err != nil {
-			if warning, ok := missingVersionRenderWarning(cluster, release, chartRef, err); ok {
-				if writeErr := writeArtifactMessage(filepath.Join(filepath.Dir(outputRoot), "warnings"), state, cluster, release.Name, []string{warning}); writeErr != nil {
-					return writeErr
+			warning := renderFailureWarning(cluster, release, chartRef, state, err)
+			if writeErr := writeArtifactMessage(filepath.Join(filepath.Dir(outputRoot), "warnings"), state, cluster, release.Name, []string{warning}); writeErr != nil {
+				return writeErr
+			}
+			if mode == cli.RenderErrorModeWarnSkipRelease {
+				if err := writeSkippedReleaseWarning(clusterDir, release, warning); err != nil {
+					return err
 				}
-				if mode == cli.RenderErrorModeWarnSkipRelease {
-					chartDir := filepath.Join(clusterDir, release.Name)
-					if err := os.MkdirAll(chartDir, 0o755); err != nil {
-						return err
-					}
-					if err := os.WriteFile(filepath.Join(chartDir, "namespace.txt"), []byte(release.Namespace+"\n"), 0o644); err != nil {
-						return err
-					}
-					if err := os.WriteFile(filepath.Join(chartDir, renderWarningFilename), []byte(warning+"\n"), 0o644); err != nil {
-						return err
-					}
-					continue
-				}
+				continue
 			}
 			return fmt.Errorf("render cluster %q release %q: %w", cluster, release.Name, err)
 		}
@@ -97,6 +89,24 @@ func renderCluster(root string, layout config.LayoutConfig, cluster, state, outp
 		}
 	}
 	return nil
+}
+
+func renderFailureWarning(cluster string, release config.Release, chartRef, state string, err error) string {
+	if warning, ok := missingVersionRenderWarning(cluster, release, chartRef, err); ok {
+		return warning
+	}
+	return fmt.Sprintf("cluster %q release %q chart %q failed to render %s manifests: %v", cluster, release.Name, chartRef, state, err)
+}
+
+func writeSkippedReleaseWarning(clusterDir string, release config.Release, warning string) error {
+	chartDir := filepath.Join(clusterDir, release.Name)
+	if err := os.MkdirAll(chartDir, 0o755); err != nil {
+		return err
+	}
+	if err := os.WriteFile(filepath.Join(chartDir, "namespace.txt"), []byte(release.Namespace+"\n"), 0o644); err != nil {
+		return err
+	}
+	return os.WriteFile(filepath.Join(chartDir, renderWarningFilename), []byte(warning+"\n"), 0o644)
 }
 
 func missingVersionRenderWarning(cluster string, release config.Release, chartRef string, err error) (string, bool) {

@@ -31,6 +31,26 @@ func TestClassifyLocateChartError_MissingVersion(t *testing.T) {
 	}
 }
 
+func TestClassifyLocateChartError_OCIFetchReferenceNotFound(t *testing.T) {
+	err := classifyLocateChartError(
+		"oci://internal.oci.repo/helm-int/vault",
+		"",
+		"3.6.3-alpha-234",
+		errors.New("failed to perform \"FetchReference\" on source: oci://internal.oci.repo/helm-int/vault:3.6.3-alpha-234: not found"),
+	)
+
+	versionErr, ok := err.(*MissingVersionError)
+	if !ok {
+		t.Fatalf("expected MissingVersionError, got %T", err)
+	}
+	if versionErr.TargetRevision != "3.6.3-alpha-234" {
+		t.Fatalf("unexpected target revision %q", versionErr.TargetRevision)
+	}
+	if !strings.Contains(versionErr.Error(), `chart version "3.6.3-alpha-234" unavailable`) {
+		t.Fatalf("unexpected error string: %s", versionErr.Error())
+	}
+}
+
 func TestClassifyLocateChartError_GenericError(t *testing.T) {
 	original := errors.New("failed to fetch chart metadata")
 	err := classifyLocateChartError("argo-cd", "https://charts.example.com", "1.2.3", original)

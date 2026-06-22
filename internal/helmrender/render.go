@@ -222,7 +222,7 @@ func looksLikeMissingChartVersion(err error) bool {
 		"manifest unknown",
 		"not found",
 	}
-	if !strings.Contains(message, "version") && !strings.Contains(message, "tag") && !strings.Contains(message, "manifest unknown") {
+	if !strings.Contains(message, "version") && !strings.Contains(message, "tag") && !strings.Contains(message, "manifest unknown") && !strings.Contains(message, "fetchreference") {
 		return false
 	}
 	for _, needle := range needles {
