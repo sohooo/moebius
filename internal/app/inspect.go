@@ -25,6 +25,8 @@ type repoContext struct {
 	BaselineClusters  []string
 	ChangedClusters   []string
 	AvailableClusters []string
+	ChartRepository   bool
+	ChartPath         string
 }
 
 type doctorCheck struct {
@@ -74,6 +76,11 @@ func inspectRepo(opts cli.Options) (repoContext, error) {
 		return repoContext{}, err
 	}
 	available := unionStrings(currentClusters, baselineClusters)
+	chartPath := opts.ChartPath
+	if chartPath == "" {
+		chartPath = "."
+	}
+	chartRepository := opts.ChartPath != "" || (len(available) == 0 && fileExists(filepath.Join(repo.Root(), "Chart.yaml")))
 	if opts.Cluster != "" && !containsString(available, opts.Cluster) {
 		if len(available) == 0 {
 			return repoContext{}, fmt.Errorf("cluster %q does not exist in the effective layout under %q (apps files: %s)", opts.Cluster, layout.ClustersDir, config.AppsFilesSummary(layout))
@@ -91,6 +98,8 @@ func inspectRepo(opts cli.Options) (repoContext, error) {
 		BaselineClusters:  baselineClusters,
 		ChangedClusters:   changedClusters,
 		AvailableClusters: available,
+		ChartRepository:   chartRepository,
+		ChartPath:         chartPath,
 	}, nil
 }
 
@@ -203,7 +212,15 @@ func shouldRunGitLabDoctor(opts cli.Options) bool {
 }
 
 func formatNoChangesMessage(ctx repoContext) string {
+	if ctx.ChartRepository {
+		return fmt.Sprintf("No affected chart changes.\n- Chart path: %s\n- Base ref: %s\n", ctx.ChartPath, ctx.BaseRefName)
+	}
 	return fmt.Sprintf("No affected clusters.\n- Effective clusters dir: %s\n- Base ref: %s\n- Hint: use --all-clusters or run `mobius clusters` to inspect available clusters.\n", ctx.EffectiveLayout.ClustersDir, ctx.BaseRefName)
+}
+
+func fileExists(path string) bool {
+	_, err := os.Stat(path)
+	return err == nil
 }
 
 func unionStrings(left, right []string) []string {

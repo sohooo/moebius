@@ -90,6 +90,42 @@ func TestParseAppsFilesRejectsInvalidList(t *testing.T) {
 	}
 }
 
+func TestParseChartRepositoryFlags(t *testing.T) {
+	opts, err := Parse([]string{"comment", "--chart-path", ".", "--values-files", "values.yaml, values-ci.yaml", "--release-name", "app", "--namespace", "demo"}, &bytes.Buffer{})
+	if err != nil {
+		t.Fatalf("Parse returned error: %v", err)
+	}
+	if opts.ChartPath != "." {
+		t.Fatalf("unexpected chart path %q", opts.ChartPath)
+	}
+	if !slices.Equal(opts.ValuesFiles, []string{"values.yaml", "values-ci.yaml"}) {
+		t.Fatalf("unexpected values files: %v", opts.ValuesFiles)
+	}
+	if opts.ReleaseName != "app" {
+		t.Fatalf("unexpected release name %q", opts.ReleaseName)
+	}
+	if opts.Namespace != "demo" {
+		t.Fatalf("unexpected namespace %q", opts.Namespace)
+	}
+}
+
+func TestParseValuesFilesRejectsInvalidList(t *testing.T) {
+	for _, value := range []string{"values.yaml,", "/values.yaml", "../values.yaml", "values.yaml,values.yaml"} {
+		if _, err := Parse([]string{"diff", "--values-files", value}, &bytes.Buffer{}); err == nil {
+			t.Fatalf("expected --values-files %q to fail", value)
+		}
+	}
+}
+
+func TestParseChartPathCannotCombineWithClusterSelection(t *testing.T) {
+	if _, err := Parse([]string{"diff", "--chart-path", ".", "--cluster", "kube-bravo"}, &bytes.Buffer{}); err == nil {
+		t.Fatal("expected --chart-path with --cluster to fail")
+	}
+	if _, err := Parse([]string{"diff", "--chart-path", ".", "--all-clusters"}, &bytes.Buffer{}); err == nil {
+		t.Fatal("expected --chart-path with --all-clusters to fail")
+	}
+}
+
 func TestParsePublishTargetDefaultsToDescription(t *testing.T) {
 	opts, err := Parse([]string{"comment"}, &bytes.Buffer{})
 	if err != nil {

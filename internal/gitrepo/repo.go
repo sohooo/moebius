@@ -286,11 +286,16 @@ func (r *Repo) WriteDirAtCommit(commit *object.Commit, prefix, destRoot string) 
 	if err != nil {
 		return err
 	}
-	prefix = strings.TrimSuffix(filepath.ToSlash(prefix), "/") + "/"
+	prefix = filepath.ToSlash(filepath.Clean(prefix))
+	if prefix == "." {
+		prefix = ""
+	} else {
+		prefix = strings.TrimSuffix(prefix, "/") + "/"
+	}
 	iter := tree.Files()
 	defer iter.Close()
 	return iter.ForEach(func(file *object.File) error {
-		if !strings.HasPrefix(file.Name, prefix) {
+		if prefix != "" && !strings.HasPrefix(file.Name, prefix) {
 			return nil
 		}
 		if file.Mode != filemode.Regular && file.Mode != filemode.Executable {

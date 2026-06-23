@@ -624,6 +624,202 @@ data:
 	}
 }
 
+func TestBuildChartModeReportsValuesChange(t *testing.T) {
+	root := t.TempDir()
+	repo, err := git.PlainInit(root, false)
+	if err != nil {
+		t.Fatalf("PlainInit: %v", err)
+	}
+	writeRootChart(t, root, "message: base\n", `apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ .Release.Name }}
+  namespace: {{ .Release.Namespace }}
+data:
+  message: {{ .Values.message | quote }}
+`)
+	mainHash := commitReportRepo(t, repo, "main")
+	setReportRepoMain(t, repo, mainHash)
+
+	writeReportTestFile(t, filepath.Join(root, "values.yaml"), "message: current\n")
+	_ = commitReportRepo(t, repo, "feature")
+
+	oldWD := chdirReportTest(t, root)
+	defer restoreReportTestWD(t, oldWD)
+
+	outputDir := filepath.Join(root, "artifacts")
+	reports, _, err := Build(cli.Options{
+		BaseRef:      "main",
+		OutputDir:    outputDir,
+		ContextLines: 1,
+		Namespace:    "demo",
+	})
+	if err != nil {
+		t.Fatalf("Build returned error: %v", err)
+	}
+	if got, want := clusterNames(reports), "chart"; got != want {
+		t.Fatalf("unexpected cluster reports %q want %q", got, want)
+	}
+	if len(reports[0].Charts) != 1 || reports[0].Charts[0].Name != "app" {
+		t.Fatalf("expected app chart report, got %#v", reports[0].Charts)
+	}
+	if reports[0].Changed != 1 {
+		t.Fatalf("expected one changed resource, got %#v", reports[0])
+	}
+	for _, rel := range []string{
+		"current/chart/app/rendered.yaml",
+		"baseline/chart/app/rendered.yaml",
+	} {
+		if _, err := os.Stat(filepath.Join(outputDir, rel)); err != nil {
+			t.Fatalf("expected chart artifact %s: %v", rel, err)
+		}
+	}
+}
+
+func TestBuildChartModeMissingDefaultValuesIsAllowed(t *testing.T) {
+	root := t.TempDir()
+	repo, err := git.PlainInit(root, false)
+	if err != nil {
+		t.Fatalf("PlainInit: %v", err)
+	}
+	writeRootChart(t, root, "", `apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ .Release.Name }}
+`)
+	mainHash := commitReportRepo(t, repo, "main")
+	setReportRepoMain(t, repo, mainHash)
+
+	writeReportTestFile(t, filepath.Join(root, "templates/configmap.yaml"), `apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ .Release.Name }}
+data:
+  changed: "true"
+`)
+	_ = commitReportRepo(t, repo, "feature")
+
+	oldWD := chdirReportTest(t, root)
+	defer restoreReportTestWD(t, oldWD)
+
+	reports, _, err := Build(cli.Options{
+		BaseRef:      "main",
+		OutputDir:    filepath.Join(root, "artifacts"),
+		ContextLines: 1,
+		Namespace:    "default",
+	})
+	if err != nil {
+		t.Fatalf("Build returned error: %v", err)
+	}
+	if len(reports) != 1 || reports[0].Changed != 1 {
+		t.Fatalf("expected chart report without values.yaml, got %#v", reports)
+	}
+}
+
+func TestBuildChartModeExplicitMissingValuesErrors(t *testing.T) {
+	root := t.TempDir()
+	repo, err := git.PlainInit(root, false)
+	if err != nil {
+		t.Fatalf("PlainInit: %v", err)
+	}
+	writeRootChart(t, root, "", `apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ .Release.Name }}
+`)
+	mainHash := commitReportRepo(t, repo, "main")
+	setReportRepoMain(t, repo, mainHash)
+	writeReportTestFile(t, filepath.Join(root, "templates/configmap.yaml"), `apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ .Release.Name }}
+data:
+  changed: "true"
+`)
+	_ = commitReportRepo(t, repo, "feature")
+
+	oldWD := chdirReportTest(t, root)
+	defer restoreReportTestWD(t, oldWD)
+
+	_, _, err = Build(cli.Options{
+		BaseRef:     "main",
+		OutputDir:   filepath.Join(root, "artifacts"),
+		ChartPath:   ".",
+		ValuesFiles: []string{"values-ci.yaml"},
+		Namespace:   "default",
+	})
+	if err == nil || !strings.Contains(err.Error(), `values file "values-ci.yaml" does not exist`) {
+		t.Fatalf("expected missing explicit values file error, got %v", err)
+	}
+}
+
+func TestBuildChartModeUnchangedRenderProducesNoReport(t *testing.T) {
+	root := t.TempDir()
+	repo, err := git.PlainInit(root, false)
+	if err != nil {
+		t.Fatalf("PlainInit: %v", err)
+	}
+	writeRootChart(t, root, "", `apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ .Release.Name }}
+`)
+	mainHash := commitReportRepo(t, repo, "main")
+	setReportRepoMain(t, repo, mainHash)
+	writeReportTestFile(t, filepath.Join(root, "README.md"), "docs only\n")
+	_ = commitReportRepo(t, repo, "feature")
+
+	oldWD := chdirReportTest(t, root)
+	defer restoreReportTestWD(t, oldWD)
+
+	reports, _, err := Build(cli.Options{
+		BaseRef:   "main",
+		OutputDir: filepath.Join(root, "artifacts"),
+		Namespace: "default",
+	})
+	if err != nil {
+		t.Fatalf("Build returned error: %v", err)
+	}
+	if len(reports) != 0 {
+		t.Fatalf("expected no report for unchanged render, got %#v", reports)
+	}
+}
+
+func TestBuildChartModeAmbiguousWithClusterLayout(t *testing.T) {
+	root := t.TempDir()
+	repo, err := git.PlainInit(root, false)
+	if err != nil {
+		t.Fatalf("PlainInit: %v", err)
+	}
+	writeRootChart(t, root, "", `apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ .Release.Name }}
+`)
+	writeTinyChart(t, root)
+	writeReportTestFile(t, filepath.Join(root, "clusters/kube-bravo/apps.yaml"), `- name: app
+  namespace: demo
+  project: default
+  chart: charts/hello-world
+`)
+	mainHash := commitReportRepo(t, repo, "main")
+	setReportRepoMain(t, repo, mainHash)
+	writeReportTestFile(t, filepath.Join(root, "README.md"), "docs only\n")
+	_ = commitReportRepo(t, repo, "feature")
+
+	oldWD := chdirReportTest(t, root)
+	defer restoreReportTestWD(t, oldWD)
+
+	_, _, err = Build(cli.Options{
+		BaseRef:   "main",
+		OutputDir: filepath.Join(root, "artifacts"),
+		Namespace: "default",
+	})
+	if err == nil || !strings.Contains(err.Error(), "both a root Chart.yaml and discoverable clusters") {
+		t.Fatalf("expected ambiguous chart/cluster error, got %v", err)
+	}
+}
+
 func writeRenderedResource(t *testing.T, path, body string) {
 	t.Helper()
 	writeReportTestFile(t, path, body)
@@ -663,6 +859,34 @@ metadata:
 data:
   message: {{ .Values.message | quote }}
 `)
+}
+
+func writeRootChart(t *testing.T, root, values, template string) {
+	t.Helper()
+	writeReportTestFile(t, filepath.Join(root, "Chart.yaml"), "apiVersion: v2\nname: app\nversion: 0.1.0\n")
+	if values != "" {
+		writeReportTestFile(t, filepath.Join(root, "values.yaml"), values)
+	}
+	writeReportTestFile(t, filepath.Join(root, "templates/configmap.yaml"), template)
+}
+
+func chdirReportTest(t *testing.T, root string) string {
+	t.Helper()
+	oldWD, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("Getwd: %v", err)
+	}
+	if err := os.Chdir(root); err != nil {
+		t.Fatalf("Chdir: %v", err)
+	}
+	return oldWD
+}
+
+func restoreReportTestWD(t *testing.T, oldWD string) {
+	t.Helper()
+	if err := os.Chdir(oldWD); err != nil {
+		t.Fatalf("restore cwd: %v", err)
+	}
 }
 
 func commitReportRepo(t *testing.T, repo *git.Repository, message string) plumbing.Hash {

@@ -166,8 +166,42 @@ metadata:
 	writeFile(t, override, "message: [unterminated\n")
 
 	_, err := New(filepath.Join(root, ".cache")).Render(root, "charts/app", "", "", "hello", "demo", override)
-	if err == nil || !strings.Contains(err.Error(), "read overrides") {
-		t.Fatalf("expected read overrides error, got %v", err)
+	if err == nil || !strings.Contains(err.Error(), "read values") {
+		t.Fatalf("expected read values error, got %v", err)
+	}
+}
+
+func TestRenderLocalChartMergesValuesFilesInOrder(t *testing.T) {
+	root := t.TempDir()
+	writeChart(t, filepath.Join(root, "charts/app"), map[string]string{
+		"templates/configmap.yaml": `apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ .Release.Name }}
+  namespace: {{ .Release.Namespace }}
+data:
+  message: {{ .Values.message | quote }}
+  retained: {{ .Values.retained | quote }}
+`,
+	}, "")
+	baseValues := filepath.Join(root, "values.yaml")
+	overrideValues := filepath.Join(root, "values-ci.yaml")
+	writeFile(t, baseValues, "message: base\nretained: base-only\n")
+	writeFile(t, overrideValues, "message: ci\n")
+
+	rendered, err := New(filepath.Join(root, ".cache")).RenderWithValuesFiles(root, "charts/app", "", "", "hello", "demo", []string{baseValues, overrideValues})
+	if err != nil {
+		t.Fatalf("RenderWithValuesFiles returned error: %v", err)
+	}
+	for _, needle := range []string{
+		"name: hello",
+		"namespace: demo",
+		`message: "ci"`,
+		`retained: "base-only"`,
+	} {
+		if !strings.Contains(rendered, needle) {
+			t.Fatalf("expected rendered output to contain %q:\n%s", needle, rendered)
+		}
 	}
 }
 

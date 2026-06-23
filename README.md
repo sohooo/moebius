@@ -90,6 +90,14 @@ This is the recommended production path:
 - fetch the MR target branch explicitly
 - keep `.mobius-out/` as the canonical debug surface
 
+For a repository that contains a single Helm chart instead of a cluster apps layout, use chart mode:
+
+```bash
+mobius diff --chart-path . --values-files values.yaml,values-ci.yaml
+```
+
+Chart mode compares the chart rendered at the merge-base with the current commit. It auto-detects a root `Chart.yaml` when no cluster layout is present, defaults to `values.yaml` if it exists, and publishes the same MR report format through `mobius comment`.
+
 Base ref behavior:
 - `--base-ref` wins when set explicitly
 - otherwise `møbius` tries `origin/HEAD`, then `main`, then `master`
@@ -135,6 +143,8 @@ flowchart TD
     I --> K["Markdown report"]
     I --> L["GitLab MR comment"]
 ```
+
+For single-chart repositories, `møbius` uses a synthetic `chart` cluster and one synthetic release so the same diff, validation, artifact, and GitLab report machinery applies.
 
 ## Releases
 

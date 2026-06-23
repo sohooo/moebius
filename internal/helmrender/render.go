@@ -61,19 +61,28 @@ func New(cacheDir string) *Renderer {
 }
 
 func (r *Renderer) Render(root string, chartRef string, repoURL string, targetRevision string, releaseName string, namespace string, overridePath string) (string, error) {
+	var valuesFiles []string
+	if overridePath != "" {
+		if _, err := os.Stat(overridePath); err == nil {
+			valuesFiles = append(valuesFiles, overridePath)
+		}
+	}
+	return r.RenderWithValuesFiles(root, chartRef, repoURL, targetRevision, releaseName, namespace, valuesFiles)
+}
+
+func (r *Renderer) RenderWithValuesFiles(root string, chartRef string, repoURL string, targetRevision string, releaseName string, namespace string, valuesFiles []string) (string, error) {
 	ch, err := r.loadChart(root, chartRef, repoURL, targetRevision)
 	if err != nil {
 		return "", err
 	}
 
 	values := map[string]interface{}{}
-	if overridePath != "" {
-		if _, err := os.Stat(overridePath); err == nil {
-			values, err = chartutil.ReadValuesFile(overridePath)
-			if err != nil {
-				return "", fmt.Errorf("read overrides %s: %w", overridePath, err)
-			}
+	for _, valuesFile := range valuesFiles {
+		fileValues, err := chartutil.ReadValuesFile(valuesFile)
+		if err != nil {
+			return "", fmt.Errorf("read values %s: %w", valuesFile, err)
 		}
+		values = chartutil.MergeTables(fileValues, values)
 	}
 
 	options := chartutil.ReleaseOptions{

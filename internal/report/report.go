@@ -50,12 +50,19 @@ func Build(opts cli.Options) ([]output.ClusterReport, string, error) {
 		return nil, "", err
 	}
 
-	clusters, err := selectClusters(repo, layout, opts, mergeBase, head, changedPaths)
+	chartMode, err := shouldUseChartMode(repo, layout, opts, mergeBase)
 	if err != nil {
 		return nil, "", err
 	}
-	if len(clusters) == 0 {
-		return nil, "", nil
+	var clusters []string
+	if !chartMode {
+		clusters, err = selectClusters(repo, layout, opts, mergeBase, head, changedPaths)
+		if err != nil {
+			return nil, "", err
+		}
+		if len(clusters) == 0 {
+			return nil, "", nil
+		}
 	}
 
 	outputDir := opts.OutputDir
@@ -101,6 +108,13 @@ func Build(opts cli.Options) ([]output.ClusterReport, string, error) {
 		_ = writeArtifactIndex(outputDir, reports)
 		_ = writeArtifactSummary(outputDir, reports)
 	}()
+	if chartMode {
+		reports, err = buildChartModeReport(repo, repoConfig, opts, mergeBase, changedPaths, baselineRoot, currentOutput, baselineOutput, diffOutput, renderer)
+		if err != nil {
+			return nil, "", err
+		}
+		return reports, outputDir, nil
+	}
 	for _, cluster := range clusters {
 		currentExists := anyAppsFileExists(repo.Root(), layout, cluster)
 		baselineExists, err := anyAppsFileExistsAtCommit(repo, mergeBase, layout, cluster)

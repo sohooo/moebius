@@ -19,6 +19,10 @@ This page summarizes the commands and flags most users need. Run `mobius --help`
 | `--base-ref <ref>` | `clusters`, `doctor`, `diff`, `comment` | Base ref used to calculate the merge-base. In GitLab MR pipelines, use the target branch name. |
 | `--cluster <name>` | `clusters`, `doctor`, `diff`, `comment` | Limit work to one cluster. |
 | `--all-clusters` | `diff`, `comment` | Render all current clusters instead of only changed clusters. |
+| `--chart-path <path>` | `diff`, `comment` | Run chart repository mode against one local Helm chart. Defaults to `.` when chart mode is auto-detected. |
+| `--values-files <list>` | `diff`, `comment` | Chart mode values files relative to `--chart-path`, merged in order. |
+| `--release-name <name>` | `diff`, `comment` | Chart mode Helm release name. Defaults to `Chart.yaml` `name`. |
+| `--namespace <name>` | `diff`, `comment` | Chart mode Helm release namespace. Defaults to `default`. |
 | `--clusters-dir <path>` | `clusters`, `doctor`, `diff`, `comment` | Override the cluster root directory from configuration. |
 | `--apps-files <list>` | `clusters`, `doctor`, `diff`, `comment` | Comma-separated apps files in precedence order, for example `apps.yaml,apps-dev.yaml`. |
 | `--output-dir <path>` | `diff`, `comment` | Persist rendered manifests, split resources, diffs, warnings, errors, and summary artifacts. |
@@ -69,6 +73,12 @@ Use multiple apps files:
 
 ```bash
 mobius diff --apps-files apps.yaml,apps-dev.yaml
+```
+
+Run against a single Helm chart repository:
+
+```bash
+mobius diff --chart-path . --values-files values.yaml,values-ci.yaml
 ```
 
 Publish a GitLab MR report:

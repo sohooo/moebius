@@ -6,6 +6,8 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"path/filepath"
+	"strings"
 
 	"github.com/sohooo/moebius/internal/config"
 )
@@ -53,6 +55,10 @@ type Options struct {
 	BaseRef          string
 	Cluster          string
 	AllClusters      bool
+	ChartPath        string
+	ValuesFiles      []string
+	ReleaseName      string
+	Namespace        string
 	OutputDir        string
 	ContextLines     int
 	DiffMode         DiffMode
@@ -81,6 +87,7 @@ func Parse(args []string, stdout io.Writer) (Options, error) {
 	opts.Validate = true
 	opts.RenderErrorMode = RenderErrorModeFail
 	opts.DuplicateKeyMode = DuplicateKeyModeError
+	opts.Namespace = "default"
 
 	fs := flag.NewFlagSet("møbius", flag.ContinueOnError)
 	fs.SetOutput(stdout)
@@ -96,6 +103,24 @@ func Parse(args []string, stdout io.Writer) (Options, error) {
 	fs.StringVar(&opts.BaseRef, "base-ref", opts.BaseRef, "Base ref used for merge-base (default: origin/HEAD, then main, then master)")
 	fs.StringVar(&opts.Cluster, "cluster", "", "Render and compare a single cluster")
 	fs.BoolVar(&opts.AllClusters, "all-clusters", false, "Render and compare all clusters")
+	fs.Func("chart-path", "Chart repository mode: path to the Helm chart (default in chart mode: .)", func(v string) error {
+		path, err := parseRelativePath(v, "chart path")
+		if err != nil {
+			return err
+		}
+		opts.ChartPath = path
+		return nil
+	})
+	fs.Func("values-files", "Chart repository mode: comma-separated values files relative to --chart-path, in precedence order", func(v string) error {
+		files, err := ParseValuesFiles(v)
+		if err != nil {
+			return err
+		}
+		opts.ValuesFiles = files
+		return nil
+	})
+	fs.StringVar(&opts.ReleaseName, "release-name", opts.ReleaseName, "Chart repository mode: Helm release name (default: Chart.yaml name)")
+	fs.StringVar(&opts.Namespace, "namespace", opts.Namespace, "Chart repository mode: Helm release namespace")
 	fs.StringVar(&opts.OutputDir, "output-dir", "", "Persist rendered artifacts and diffs under PATH")
 	fs.IntVar(&opts.ContextLines, "context-lines", opts.ContextLines, "Unified diff context lines")
 	fs.BoolVar(&opts.Validate, "validate", opts.Validate, "Validate current rendered resources against structural, schema, and semantic validators")
@@ -182,6 +207,15 @@ func Parse(args []string, stdout io.Writer) (Options, error) {
 	if opts.Cluster != "" && opts.AllClusters {
 		return opts, errors.New("--cluster and --all-clusters cannot be combined")
 	}
+	if opts.ChartPath != "" && (opts.Cluster != "" || opts.AllClusters) {
+		return opts, errors.New("--chart-path cannot be combined with --cluster or --all-clusters")
+	}
+	if opts.ReleaseName != "" && strings.TrimSpace(opts.ReleaseName) != opts.ReleaseName {
+		return opts, errors.New("--release-name must not have surrounding whitespace")
+	}
+	if strings.TrimSpace(opts.Namespace) == "" || strings.TrimSpace(opts.Namespace) != opts.Namespace {
+		return opts, errors.New("--namespace must not be empty or have surrounding whitespace")
+	}
 	if opts.ContextLines < 0 {
 		return opts, errors.New("--context-lines must be >= 0")
 	}
@@ -195,4 +229,37 @@ func Parse(args []string, stdout io.Writer) (Options, error) {
 		opts.OutputFormat = OutputFormatMarkdown
 	}
 	return opts, nil
+}
+
+func ParseValuesFiles(value string) ([]string, error) {
+	parts := strings.Split(value, ",")
+	files := make([]string, 0, len(parts))
+	seen := map[string]struct{}{}
+	for _, part := range parts {
+		file, err := parseRelativePath(part, "values file")
+		if err != nil {
+			return nil, err
+		}
+		if _, ok := seen[file]; ok {
+			return nil, fmt.Errorf("duplicate values file %q", file)
+		}
+		seen[file] = struct{}{}
+		files = append(files, file)
+	}
+	return files, nil
+}
+
+func parseRelativePath(value, label string) (string, error) {
+	path := strings.TrimSpace(value)
+	if path == "" {
+		return "", fmt.Errorf("%s must not be empty", label)
+	}
+	if filepath.IsAbs(path) {
+		return "", fmt.Errorf("%s %q must be relative", label, path)
+	}
+	clean := filepath.ToSlash(filepath.Clean(path))
+	if clean == ".." || strings.HasPrefix(clean, "../") {
+		return "", fmt.Errorf("%s %q must stay within its base directory", label, path)
+	}
+	return clean, nil
 }

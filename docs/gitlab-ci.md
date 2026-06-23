@@ -66,6 +66,53 @@ Why the defaults matter:
 | `--base-ref "$CI_MERGE_REQUEST_TARGET_BRANCH_NAME"` | Compares the MR against the intended target branch. |
 | `--output-dir .mobius-out` | Keeps diagnostics and rendered artifacts available after success or failure. |
 
+### Single Helm Chart Repository
+
+Use this job when the repository itself is one Helm chart with `Chart.yaml`, `templates/`, and optionally `values.yaml` at the repo root:
+
+```yaml
+mobius-chart-diff:
+  stage: test
+  image: ghcr.io/sohooo/moebius:vX.Y.Z
+  variables:
+    GIT_DEPTH: "0"
+    GITLAB_API_TOKEN: "${MOBIUS_GITLAB_API_TOKEN}"
+  script:
+    - git fetch origin "${CI_MERGE_REQUEST_TARGET_BRANCH_NAME}:${CI_MERGE_REQUEST_TARGET_BRANCH_NAME}"
+    - |
+      møbius comment \
+        --base-ref "${CI_MERGE_REQUEST_TARGET_BRANCH_NAME}" \
+        --chart-path . \
+        --release-name my-chart \
+        --namespace default \
+        --output-dir .mobius-out
+  artifacts:
+    when: always
+    paths:
+      - .mobius-out/
+```
+
+Chart repository defaults:
+
+| Setting | Default |
+| --- | --- |
+| `--chart-path` | `.` when chart mode is auto-detected or explicitly selected. |
+| `--values-files` | `values.yaml` when that file exists. Missing default `values.yaml` is allowed. |
+| `--release-name` | `name` from `Chart.yaml`. |
+| `--namespace` | `default`. |
+
+Add environment-specific values files when needed:
+
+```bash
+møbius comment \
+  --base-ref "${CI_MERGE_REQUEST_TARGET_BRANCH_NAME}" \
+  --chart-path . \
+  --values-files values.yaml,values-ci.yaml \
+  --output-dir .mobius-out
+```
+
+Values files are merged in listed order; later files override earlier files. Explicitly listed values files must exist. `møbius` does not run `helm dependency update`, so chart dependencies should be committed or otherwise resolvable by Helm during rendering.
+
 ## Required Environment
 
 ### GitLab CI Variables
@@ -161,6 +208,10 @@ Overrides are shared for all configured apps files. For example, a release defin
 | --- | --- |
 | `--cluster kube-bravo` | Limit the report to one cluster. |
 | `--all-clusters` | Render all current clusters instead of only changed clusters. |
+| `--chart-path .` | Run against a single Helm chart repository instead of a cluster layout. |
+| `--values-files values.yaml,values-ci.yaml` | Render chart mode with explicit values files, merged in order. |
+| `--release-name my-chart` | Override the chart-mode Helm release name. |
+| `--namespace default` | Override the chart-mode Helm release namespace. |
 | `--apps-files apps.yaml,apps-dev.yaml` | Load multiple apps files per cluster. Earlier files win on duplicate release names. |
 | `--clusters-dir environments` | Use a cluster root other than `clusters/`. |
 | `--publish-target note` | Publish a sticky MR note instead of updating the MR description. |
