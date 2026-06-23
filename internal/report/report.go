@@ -45,8 +45,12 @@ func Build(opts cli.Options) ([]output.ClusterReport, string, error) {
 	if err != nil {
 		return nil, "", err
 	}
+	changedPaths, err := repo.ChangedPaths(mergeBase, head)
+	if err != nil {
+		return nil, "", err
+	}
 
-	clusters, err := selectClusters(repo, layout, opts, mergeBase, head)
+	clusters, err := selectClusters(repo, layout, opts, mergeBase, head, changedPaths)
 	if err != nil {
 		return nil, "", err
 	}
@@ -107,16 +111,9 @@ func Build(opts cli.Options) ([]output.ClusterReport, string, error) {
 			return nil, "", fmt.Errorf("cluster %q does not exist in current worktree or at merge-base", cluster)
 		}
 
-		if err := prepareBaselineCluster(repo, mergeBase, layout, cluster, baselineRoot); err != nil {
+		if err := prepareBaselineClusterFiles(repo, mergeBase, layout, cluster, baselineRoot); err != nil {
 			return nil, "", err
 		}
-		if err := renderCluster(repo.Root(), layout, cluster, "current", currentOutput, renderer, opts.RenderErrorMode, opts.DuplicateKeyMode); err != nil {
-			return nil, "", err
-		}
-		if err := renderCluster(baselineRoot, layout, cluster, "baseline", baselineOutput, renderer, opts.RenderErrorMode, opts.DuplicateKeyMode); err != nil {
-			return nil, "", err
-		}
-
 		baselineReleases, err := loadReleasesIfPresent(baselineRoot, layout, cluster)
 		if err != nil {
 			return nil, "", err
@@ -125,9 +122,28 @@ func Build(opts cli.Options) ([]output.ClusterReport, string, error) {
 		if err != nil {
 			return nil, "", err
 		}
+		selection, err := planAffectedReleases(repo.Root(), baselineRoot, layout, cluster, currentExists, baselineExists, changedPaths, baselineReleases, currentReleases)
+		if err != nil {
+			return nil, "", err
+		}
+		if selection.empty() {
+			continue
+		}
+		if err := prepareBaselineCharts(repo, mergeBase, layout, cluster, baselineRoot, baselineReleases, selection); err != nil {
+			return nil, "", err
+		}
+		if err := renderCluster(repo.Root(), layout, cluster, "current", currentOutput, selection, renderer, opts.RenderErrorMode, opts.DuplicateKeyMode); err != nil {
+			return nil, "", err
+		}
+		if err := renderCluster(baselineRoot, layout, cluster, "baseline", baselineOutput, selection, renderer, opts.RenderErrorMode, opts.DuplicateKeyMode); err != nil {
+			return nil, "", err
+		}
 		report, err := compareCluster(cluster, baselineOutput, currentOutput, diffOutput, opts.ContextLines, opts.Validate, diffIgnoreOptions(repoConfig), baselineReleases, currentReleases)
 		if err != nil {
 			return nil, "", err
+		}
+		if len(report.Charts) == 0 {
+			continue
 		}
 		reports = append(reports, report)
 	}

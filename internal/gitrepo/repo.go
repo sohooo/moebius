@@ -119,6 +119,27 @@ func (r *Repo) MergeBase(head, base *object.Commit) (*object.Commit, error) {
 }
 
 func (r *Repo) ChangedClusters(clustersDir string, base, head *object.Commit) ([]string, error) {
+	paths, err := r.ChangedPaths(base, head)
+	if err != nil {
+		return nil, err
+	}
+
+	prefix := strings.TrimSuffix(filepath.ToSlash(clustersDir), "/") + "/"
+	set := map[string]struct{}{}
+	for _, path := range paths {
+		if !strings.HasPrefix(path, prefix) {
+			continue
+		}
+		rest := strings.TrimPrefix(path, prefix)
+		parts := strings.SplitN(rest, "/", 2)
+		if parts[0] != "" {
+			set[parts[0]] = struct{}{}
+		}
+	}
+	return mapKeys(set), nil
+}
+
+func (r *Repo) ChangedPaths(base, head *object.Commit) ([]string, error) {
 	baseTree, err := base.Tree()
 	if err != nil {
 		return nil, err
@@ -132,7 +153,6 @@ func (r *Repo) ChangedClusters(clustersDir string, base, head *object.Commit) ([
 		return nil, err
 	}
 
-	prefix := strings.TrimSuffix(filepath.ToSlash(clustersDir), "/") + "/"
 	set := map[string]struct{}{}
 	for _, filePatch := range patch.FilePatches() {
 		from, to := filePatch.Files()
@@ -140,15 +160,7 @@ func (r *Repo) ChangedClusters(clustersDir string, base, head *object.Commit) ([
 			if file == nil {
 				continue
 			}
-			path := file.Path()
-			if !strings.HasPrefix(path, prefix) {
-				continue
-			}
-			rest := strings.TrimPrefix(path, prefix)
-			parts := strings.SplitN(rest, "/", 2)
-			if parts[0] != "" {
-				set[parts[0]] = struct{}{}
-			}
+			set[filepath.ToSlash(file.Path())] = struct{}{}
 		}
 	}
 	return mapKeys(set), nil

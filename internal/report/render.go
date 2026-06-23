@@ -13,7 +13,7 @@ import (
 	"github.com/sohooo/moebius/internal/resources"
 )
 
-func renderCluster(root string, layout config.LayoutConfig, cluster, state, outputRoot string, renderer *helmrender.Renderer, mode cli.RenderErrorMode, duplicateKeyMode cli.DuplicateKeyMode) error {
+func renderCluster(root string, layout config.LayoutConfig, cluster, state, outputRoot string, selection releaseSelection, renderer *helmrender.Renderer, mode cli.RenderErrorMode, duplicateKeyMode cli.DuplicateKeyMode) error {
 	if !anyAppsFileExists(root, layout, cluster) {
 		return nil
 	}
@@ -22,11 +22,18 @@ func renderCluster(root string, layout config.LayoutConfig, cluster, state, outp
 		return err
 	}
 	clusterDir := filepath.Join(outputRoot, cluster)
-	if err := os.MkdirAll(clusterDir, 0o755); err != nil {
-		return err
-	}
+	clusterDirCreated := false
 
 	for _, release := range releases {
+		if !selection.includes(release.Name) {
+			continue
+		}
+		if !clusterDirCreated {
+			if err := os.MkdirAll(clusterDir, 0o755); err != nil {
+				return err
+			}
+			clusterDirCreated = true
+		}
 		overridePath := config.ResolveOverridePath(root, layout, cluster, release)
 		if !fileExists(overridePath) {
 			overridePath = ""

@@ -138,6 +138,13 @@ func TestChangedClustersAndMergeBase(t *testing.T) {
 	if got, want := strings.Join(clusters, ","), "kube-bravo,kube-charlie"; got != want {
 		t.Fatalf("unexpected changed clusters %q want %q", got, want)
 	}
+	paths, err := r.ChangedPaths(baseCommit, headCommit)
+	if err != nil {
+		t.Fatalf("ChangedPaths: %v", err)
+	}
+	if got, want := strings.Join(paths, ","), "clusters/kube-bravo/apps.yaml,clusters/kube-charlie/apps.yaml,docs/ignored.md"; got != want {
+		t.Fatalf("unexpected changed paths %q want %q", got, want)
+	}
 }
 
 func TestPathExistsAndWriteAtCommit(t *testing.T) {

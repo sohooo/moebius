@@ -10,7 +10,7 @@ import (
 	"github.com/sohooo/moebius/internal/gitrepo"
 )
 
-func prepareBaselineCluster(repo *gitrepo.Repo, mergeBase *object.Commit, layout config.LayoutConfig, cluster, baselineRoot string) error {
+func prepareBaselineClusterFiles(repo *gitrepo.Repo, mergeBase *object.Commit, layout config.LayoutConfig, cluster, baselineRoot string) error {
 	clusterRel := filepath.ToSlash(filepath.Join(layout.ClustersDir, cluster))
 	exists, err := repo.PathExistsAtCommit(mergeBase, clusterRel)
 	if err != nil {
@@ -20,18 +20,14 @@ func prepareBaselineCluster(repo *gitrepo.Repo, mergeBase *object.Commit, layout
 		return nil
 	}
 
-	if err := repo.WriteDirAtCommit(mergeBase, clusterRel, baselineRoot); err != nil {
-		return err
-	}
+	return repo.WriteDirAtCommit(mergeBase, clusterRel, baselineRoot)
+}
 
-	if !anyAppsFileExists(baselineRoot, layout, cluster) {
-		return nil
-	}
-	releases, err := config.LoadReleases(baselineRoot, layout, cluster)
-	if err != nil {
-		return err
-	}
+func prepareBaselineCharts(repo *gitrepo.Repo, mergeBase *object.Commit, layout config.LayoutConfig, cluster, baselineRoot string, releases map[string]config.Release, selection releaseSelection) error {
 	for _, release := range releases {
+		if !selection.includes(release.Name) {
+			continue
+		}
 		if release.IsRemoteChart() {
 			if release.TargetRevision == "" {
 				return fmt.Errorf("cluster %q baseline release %q uses remote chart without targetRevision", cluster, release.Name)

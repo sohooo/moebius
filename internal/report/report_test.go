@@ -247,7 +247,7 @@ data:
 `)
 	writeReportTestFile(t, filepath.Join(clusterDir, "overrides", "default", "dev-app.yaml"), "message: dev\n")
 
-	err := renderCluster(root, layout, "kube-bravo", "current", outputRoot, helmrender.New(cacheDir), cli.RenderErrorModeFail, cli.DuplicateKeyModeError)
+	err := renderCluster(root, layout, "kube-bravo", "current", outputRoot, allReleasesSelection(), helmrender.New(cacheDir), cli.RenderErrorModeFail, cli.DuplicateKeyModeError)
 	if err != nil {
 		t.Fatalf("renderCluster returned error: %v", err)
 	}
@@ -295,7 +295,7 @@ metadata:
   chart: charts/ok
 `)
 
-	err := renderCluster(root, layout, "kube-bravo", "current", outputRoot, helmrender.New(cacheDir), cli.RenderErrorModeWarnSkipRelease, cli.DuplicateKeyModeError)
+	err := renderCluster(root, layout, "kube-bravo", "current", outputRoot, allReleasesSelection(), helmrender.New(cacheDir), cli.RenderErrorModeWarnSkipRelease, cli.DuplicateKeyModeError)
 	if err != nil {
 		t.Fatalf("renderCluster returned error: %v", err)
 	}
@@ -434,6 +434,196 @@ func TestBuildRendersMergeBaseCurrentAndSelectedClusters(t *testing.T) {
 	}
 }
 
+func TestBuildPrunesUnaffectedReleases(t *testing.T) {
+	root := t.TempDir()
+	repo, err := git.PlainInit(root, false)
+	if err != nil {
+		t.Fatalf("PlainInit: %v", err)
+	}
+	writeTinyChart(t, root)
+	writeReportTestFile(t, filepath.Join(root, "clusters/kube-bravo/apps.yaml"), `- name: outline
+  namespace: demo
+  project: default
+  chart: charts/hello-world
+- name: keycloak
+  namespace: demo
+  project: default
+  chart: charts/hello-world
+`)
+	writeReportTestFile(t, filepath.Join(root, "clusters/kube-bravo/overrides/default/outline.yaml"), "message: outline-base\n")
+	writeReportTestFile(t, filepath.Join(root, "clusters/kube-bravo/overrides/default/keycloak.yaml"), "message: keycloak-base\n")
+	mainHash := commitReportRepo(t, repo, "main")
+	setReportRepoMain(t, repo, mainHash)
+
+	writeReportTestFile(t, filepath.Join(root, "clusters/kube-bravo/overrides/default/outline.yaml"), "message: outline-current\n")
+	_ = commitReportRepo(t, repo, "feature")
+
+	oldWD, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("Getwd: %v", err)
+	}
+	if err := os.Chdir(root); err != nil {
+		t.Fatalf("Chdir: %v", err)
+	}
+	defer func() {
+		if err := os.Chdir(oldWD); err != nil {
+			t.Fatalf("restore cwd: %v", err)
+		}
+	}()
+
+	outputDir := filepath.Join(root, "artifacts")
+	reports, _, err := Build(cli.Options{
+		BaseRef:      "main",
+		OutputDir:    outputDir,
+		ContextLines: 1,
+	})
+	if err != nil {
+		t.Fatalf("Build returned error: %v", err)
+	}
+	if got, want := clusterNames(reports), "kube-bravo"; got != want {
+		t.Fatalf("unexpected cluster reports %q want %q", got, want)
+	}
+	if len(reports[0].Charts) != 1 || reports[0].Charts[0].Name != "outline" {
+		t.Fatalf("expected only outline chart in report, got %#v", reports[0].Charts)
+	}
+	for _, rel := range []string{
+		"current/kube-bravo/outline/rendered.yaml",
+		"baseline/kube-bravo/outline/rendered.yaml",
+	} {
+		if _, err := os.Stat(filepath.Join(outputDir, rel)); err != nil {
+			t.Fatalf("expected affected artifact %s: %v", rel, err)
+		}
+	}
+	for _, rel := range []string{
+		"current/kube-bravo/keycloak",
+		"baseline/kube-bravo/keycloak",
+		"diff/kube-bravo/keycloak",
+	} {
+		if _, err := os.Stat(filepath.Join(outputDir, rel)); !os.IsNotExist(err) {
+			t.Fatalf("unexpected unaffected artifact %s, err=%v", rel, err)
+		}
+	}
+}
+
+func TestBuildDoesNotRenderUnaffectedBrokenRelease(t *testing.T) {
+	root := t.TempDir()
+	repo, err := git.PlainInit(root, false)
+	if err != nil {
+		t.Fatalf("PlainInit: %v", err)
+	}
+	writeReportTestFile(t, filepath.Join(root, "charts/broken/Chart.yaml"), "apiVersion: v2\nname: broken\nversion: 0.1.0\n")
+	writeReportTestFile(t, filepath.Join(root, "charts/broken/templates/configmap.yaml"), `apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ required "name required" .Values.name }}
+`)
+	writeTinyChart(t, root)
+	writeReportTestFile(t, filepath.Join(root, "clusters/kube-bravo/apps.yaml"), `- name: broken
+  namespace: demo
+  project: default
+  chart: charts/broken
+- name: ok
+  namespace: demo
+  project: default
+  chart: charts/hello-world
+`)
+	writeReportTestFile(t, filepath.Join(root, "clusters/kube-bravo/overrides/default/ok.yaml"), "message: base\n")
+	mainHash := commitReportRepo(t, repo, "main")
+	setReportRepoMain(t, repo, mainHash)
+
+	writeReportTestFile(t, filepath.Join(root, "clusters/kube-bravo/overrides/default/ok.yaml"), "message: current\n")
+	_ = commitReportRepo(t, repo, "feature")
+
+	oldWD, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("Getwd: %v", err)
+	}
+	if err := os.Chdir(root); err != nil {
+		t.Fatalf("Chdir: %v", err)
+	}
+	defer func() {
+		if err := os.Chdir(oldWD); err != nil {
+			t.Fatalf("restore cwd: %v", err)
+		}
+	}()
+
+	outputDir := filepath.Join(root, "artifacts")
+	reports, _, err := Build(cli.Options{
+		BaseRef:         "main",
+		OutputDir:       outputDir,
+		ContextLines:    1,
+		RenderErrorMode: cli.RenderErrorModeFail,
+	})
+	if err != nil {
+		t.Fatalf("Build returned error: %v", err)
+	}
+	if len(reports) != 1 || len(reports[0].Charts) != 1 || reports[0].Charts[0].Name != "ok" {
+		t.Fatalf("expected only ok chart in report, got %#v", reports)
+	}
+	if _, err := os.Stat(filepath.Join(outputDir, "current/kube-bravo/broken")); !os.IsNotExist(err) {
+		t.Fatalf("unexpected broken chart artifact, err=%v", err)
+	}
+}
+
+func TestBuildLocalChartChangeAffectsReferencingReleases(t *testing.T) {
+	root := t.TempDir()
+	repo, err := git.PlainInit(root, false)
+	if err != nil {
+		t.Fatalf("PlainInit: %v", err)
+	}
+	writeTinyChart(t, root)
+	writeReportTestFile(t, filepath.Join(root, "clusters/kube-bravo/apps.yaml"), `- name: outline
+  namespace: demo
+  project: default
+  chart: charts/hello-world
+- name: keycloak
+  namespace: demo
+  project: default
+  chart: charts/hello-world
+`)
+	mainHash := commitReportRepo(t, repo, "main")
+	setReportRepoMain(t, repo, mainHash)
+
+	writeReportTestFile(t, filepath.Join(root, "charts/hello-world/templates/configmap.yaml"), `apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ .Release.Name }}
+  namespace: {{ .Release.Namespace }}
+data:
+  message: {{ .Values.message | quote }}
+  chartChange: "true"
+`)
+	_ = commitReportRepo(t, repo, "feature")
+
+	oldWD, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("Getwd: %v", err)
+	}
+	if err := os.Chdir(root); err != nil {
+		t.Fatalf("Chdir: %v", err)
+	}
+	defer func() {
+		if err := os.Chdir(oldWD); err != nil {
+			t.Fatalf("restore cwd: %v", err)
+		}
+	}()
+
+	reports, _, err := Build(cli.Options{
+		BaseRef:      "main",
+		OutputDir:    filepath.Join(root, "artifacts"),
+		ContextLines: 1,
+	})
+	if err != nil {
+		t.Fatalf("Build returned error: %v", err)
+	}
+	if got, want := clusterNames(reports), "kube-bravo"; got != want {
+		t.Fatalf("unexpected cluster reports %q want %q", got, want)
+	}
+	if got, want := chartNames(reports[0].Charts), "keycloak,outline"; got != want {
+		t.Fatalf("unexpected chart reports %q want %q", got, want)
+	}
+}
+
 func writeRenderedResource(t *testing.T, path, body string) {
 	t.Helper()
 	writeReportTestFile(t, path, body)
@@ -525,6 +715,14 @@ func findReport(t *testing.T, reports []output.ClusterReport, name string) outpu
 	}
 	t.Fatalf("report %q not found in %#v", name, reports)
 	return output.ClusterReport{}
+}
+
+func chartNames(charts []output.ChartReport) string {
+	names := make([]string, 0, len(charts))
+	for _, chart := range charts {
+		names = append(names, chart.Name)
+	}
+	return strings.Join(names, ",")
 }
 
 func TestWriteArtifactIndex_IncludesErrorAndWarningArtifacts(t *testing.T) {
