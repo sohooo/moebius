@@ -14,7 +14,7 @@ import (
 	"github.com/sohooo/moebius/internal/validate"
 )
 
-func compareCluster(cluster, baselineOutput, currentOutput, diffOutput string, contextLines int, doValidate bool, baselineReleases map[string]config.Release, currentReleases map[string]config.Release) (output.ClusterReport, error) {
+func compareCluster(cluster, baselineOutput, currentOutput, diffOutput string, contextLines int, doValidate bool, ignoreOpts diff.IgnoreOptions, baselineReleases map[string]config.Release, currentReleases map[string]config.Release) (output.ClusterReport, error) {
 	report := output.ClusterReport{Name: cluster}
 
 	chartNames, err := unionDirs(filepath.Join(baselineOutput, cluster), filepath.Join(currentOutput, cluster))
@@ -84,6 +84,11 @@ func compareCluster(cluster, baselineOutput, currentOutput, diffOutput string, c
 			result, err := diff.Compare(oldPath, newPath, oldValue, newValue, contextLines)
 			if err != nil {
 				return report, err
+			}
+			semanticChanges := len(result.Changes)
+			result.Changes = diff.FilterIgnoredChanges(result.Changes, ignoreOpts)
+			if semanticChanges > 0 {
+				result.HasChanges = len(result.Changes) > 0
 			}
 			if !result.HasChanges {
 				continue

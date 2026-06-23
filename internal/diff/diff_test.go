@@ -195,6 +195,68 @@ func TestRenderSnippetAndSemanticConsole(t *testing.T) {
 	}
 }
 
+func TestFilterIgnoredChanges_DefaultHelmMetadata(t *testing.T) {
+	changes := []Change{
+		{State: "changed", Path: path("metadata", "labels", "app.kubernetes.io/version"), Old: "1.8.0", New: "1.8.1"},
+		{State: "changed", Path: path("metadata", "labels", "helm.sh/chart"), Old: "outline-0.8.0", New: "outline-0.9.0"},
+		{State: "changed", Path: path("spec", "template", "metadata", "annotations", "checksum/config"), Old: "old", New: "new"},
+		{State: "changed", Path: path("spec", "template", "metadata", "annotations", "checksum/secret"), Old: "old", New: "new"},
+		{State: "changed", Path: path("metadata", "labels", "team"), Old: "platform", New: "product"},
+		{State: "changed", Path: path("spec", "replicas"), Old: 2, New: 3},
+	}
+
+	filtered := FilterIgnoredChanges(changes, IgnoreOptions{UseDefaults: true})
+
+	got := changeSummaries(filtered)
+	want := []string{
+		"changed metadata.labels.team",
+		"changed spec.replicas",
+	}
+	if strings.Join(got, "\n") != strings.Join(want, "\n") {
+		t.Fatalf("unexpected filtered changes:\ngot  %v\nwant %v", got, want)
+	}
+}
+
+func TestFilterIgnoredChanges_CustomMetadataRules(t *testing.T) {
+	changes := []Change{
+		{State: "changed", Path: path("spec", "jobTemplate", "spec", "template", "metadata", "annotations", "rollme"), Old: "a", New: "b"},
+		{State: "changed", Path: path("metadata", "annotations", "rollme"), Old: "a", New: "b"},
+	}
+
+	filtered := FilterIgnoredChanges(changes, IgnoreOptions{
+		Metadata: []MetadataIgnoreRule{{
+			Locations:   []string{"spec.jobTemplate.spec.template.metadata"},
+			Annotations: []string{"roll*"},
+		}},
+	})
+
+	got := changeSummaries(filtered)
+	want := []string{"changed metadata.annotations.rollme"}
+	if strings.Join(got, "\n") != strings.Join(want, "\n") {
+		t.Fatalf("unexpected filtered changes:\ngot  %v\nwant %v", got, want)
+	}
+}
+
+func TestFilterIgnoredChanges_DoesNotHideWholeResourceAdds(t *testing.T) {
+	changes := []Change{
+		{State: "added", Path: path("metadata", "labels", "helm.sh/chart"), New: "outline-0.9.0"},
+	}
+
+	filtered := FilterIgnoredChanges(changes, IgnoreOptions{UseDefaults: true})
+
+	if len(filtered) != 1 {
+		t.Fatalf("expected added changes to remain visible, got %#v", filtered)
+	}
+}
+
+func path(keys ...string) []Segment {
+	out := make([]Segment, 0, len(keys))
+	for _, key := range keys {
+		out = append(out, Segment{Key: key})
+	}
+	return out
+}
+
 func changeSummaries(changes []Change) []string {
 	out := make([]string, 0, len(changes))
 	for _, change := range changes {

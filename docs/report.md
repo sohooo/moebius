@@ -46,6 +46,12 @@ Severity icons prioritize review order:
 
 Surfaces describe the kind of platform impact, such as `security`, `networking`, `storage`, `workload`, or `database`. Treat a lower severity item on a sensitive surface as still worth human review when it affects shared infrastructure.
 
+## Suppressed Metadata Noise
+
+`møbius` omits known non-actionable Helm metadata churn from semantic diffs by default. This includes common chart/version labels and checksum annotations such as `app.kubernetes.io/version`, `helm.sh/chart`, and `checksum/config`.
+
+If a resource only changed in ignored metadata paths, it is treated as unchanged and does not appear in the MR report. If a resource has both ignored metadata and actionable changes, only the actionable changes are shown. Repository maintainers can tune this behavior in [configuration.md](configuration.md#diff-ignore-rules).
+
 ## Validation Signals
 
 Validation states are reviewer signals, not deployment gates:

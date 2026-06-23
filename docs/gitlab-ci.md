@@ -249,6 +249,42 @@ Configuration precedence:
 
 More detail is in [configuration.md](configuration.md).
 
+### Pipeline Diff Ignore Overrides
+
+By default, `møbius` suppresses common Helm metadata churn in MR reports, including chart/version labels and checksum annotations. Use `MOBIUS_CONFIG_YAML` when a pipeline needs different ignore behavior.
+
+Disable built-in ignores for one pipeline:
+
+```yaml
+variables:
+  MOBIUS_CONFIG_YAML: |
+    diff:
+      ignore:
+        defaults: false
+```
+
+Keep built-ins and add repo-specific metadata noise:
+
+```yaml
+variables:
+  MOBIUS_CONFIG_YAML: |
+    diff:
+      ignore:
+        defaults: true
+        metadata:
+          - locations:
+              - metadata
+              - spec.template.metadata
+              - spec.jobTemplate.spec.template.metadata
+            labels:
+              - app.example.com/build-id
+            annotations:
+              - checksum/*
+              - rollme
+```
+
+`MOBIUS_CONFIG_YAML` is an overlay, not an append-only patch. If `config.yaml` already contains `diff.ignore.metadata` and CI should add more patterns, include the full desired metadata rule list in `MOBIUS_CONFIG_YAML`.
+
 ## Common Pipeline Variants
 
 Continue when one release fails to render:

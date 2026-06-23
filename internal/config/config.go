@@ -20,6 +20,7 @@ var canonicalFields = []string{"name", "namespace", "project", "repoURL", "chart
 
 type RepoConfig struct {
 	Layout LayoutConfig `yaml:"layout"`
+	Diff   DiffConfig   `yaml:"diff"`
 }
 
 type LoadMetadata struct {
@@ -56,6 +57,21 @@ type OverridesConfig struct {
 	FallbackPath string `yaml:"fallback_path"`
 }
 
+type DiffConfig struct {
+	Ignore DiffIgnoreConfig `yaml:"ignore"`
+}
+
+type DiffIgnoreConfig struct {
+	Defaults bool                     `yaml:"defaults"`
+	Metadata []DiffMetadataIgnoreRule `yaml:"metadata"`
+}
+
+type DiffMetadataIgnoreRule struct {
+	Locations   []string `yaml:"locations"`
+	Labels      []string `yaml:"labels"`
+	Annotations []string `yaml:"annotations"`
+}
+
 type Release struct {
 	Name           string
 	Namespace      string
@@ -85,6 +101,11 @@ func Default() RepoConfig {
 			Overrides: OverridesConfig{
 				Path:         "overrides/{project}/{name}.yaml",
 				FallbackPath: "overrides/{name}.yaml",
+			},
+		},
+		Diff: DiffConfig{
+			Ignore: DiffIgnoreConfig{
+				Defaults: true,
 			},
 		},
 	}
@@ -202,6 +223,9 @@ func (c *RepoConfig) Validate() error {
 		if err := validatePattern(c.Layout.Overrides.FallbackPath, "layout.overrides.fallback_path"); err != nil {
 			return err
 		}
+	}
+	if err := validateDiffIgnore(c.Diff.Ignore); err != nil {
+		return err
 	}
 	return nil
 }
@@ -377,6 +401,68 @@ func validatePattern(pattern, field string) error {
 		case "cluster", "project", "name":
 		default:
 			return fmt.Errorf("%s contains unknown placeholder %q", field, match[1])
+		}
+	}
+	return nil
+}
+
+func validateDiffIgnore(ignore DiffIgnoreConfig) error {
+	for i, rule := range ignore.Metadata {
+		prefix := fmt.Sprintf("diff.ignore.metadata[%d]", i)
+		if len(rule.Locations) == 0 {
+			return fmt.Errorf("%s.locations must contain at least one path", prefix)
+		}
+		if len(rule.Labels) == 0 && len(rule.Annotations) == 0 {
+			return fmt.Errorf("%s must contain at least one label or annotation pattern", prefix)
+		}
+		for j, location := range rule.Locations {
+			if err := validateIgnoreLocation(location); err != nil {
+				return fmt.Errorf("%s.locations[%d]: %w", prefix, j, err)
+			}
+		}
+		for j, pattern := range rule.Labels {
+			if err := validateIgnoreGlob(pattern); err != nil {
+				return fmt.Errorf("%s.labels[%d]: %w", prefix, j, err)
+			}
+		}
+		for j, pattern := range rule.Annotations {
+			if err := validateIgnoreGlob(pattern); err != nil {
+				return fmt.Errorf("%s.annotations[%d]: %w", prefix, j, err)
+			}
+		}
+	}
+	return nil
+}
+
+func validateIgnoreLocation(location string) error {
+	location = strings.TrimSpace(location)
+	if location == "" {
+		return fmt.Errorf("location must not be empty")
+	}
+	if strings.HasPrefix(location, ".") || strings.HasSuffix(location, ".") || strings.Contains(location, "..") {
+		return fmt.Errorf("location %q must be a relative semantic path", location)
+	}
+	for _, part := range strings.Split(location, ".") {
+		if strings.TrimSpace(part) == "" {
+			return fmt.Errorf("location %q must not contain empty path segments", location)
+		}
+		if strings.ContainsAny(part, "[]*") {
+			return fmt.Errorf("location %q must not contain indexes or wildcards", location)
+		}
+	}
+	return nil
+}
+
+func validateIgnoreGlob(pattern string) error {
+	pattern = strings.TrimSpace(pattern)
+	if pattern == "" {
+		return fmt.Errorf("pattern must not be empty")
+	}
+	for _, r := range pattern {
+		switch r {
+		case '*':
+		case '[', ']', '?':
+			return fmt.Errorf("pattern %q only supports * as a wildcard", pattern)
 		}
 	}
 	return nil

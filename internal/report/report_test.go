@@ -16,6 +16,7 @@ import (
 
 	"github.com/sohooo/moebius/internal/cli"
 	"github.com/sohooo/moebius/internal/config"
+	"github.com/sohooo/moebius/internal/diff"
 	"github.com/sohooo/moebius/internal/helmrender"
 	"github.com/sohooo/moebius/internal/output"
 )
@@ -37,7 +38,7 @@ func TestCompareCluster_IncludesChartWithWarningsOnly(t *testing.T) {
 		t.Fatalf("write notices: %v", err)
 	}
 
-	report, err := compareCluster("kube-bravo", baselineOutput, currentOutput, diffOutput, 3, false, map[string]config.Release{}, map[string]config.Release{})
+	report, err := compareCluster("kube-bravo", baselineOutput, currentOutput, diffOutput, 3, false, diff.IgnoreOptions{}, map[string]config.Release{}, map[string]config.Release{})
 	if err != nil {
 		t.Fatalf("compareCluster returned error: %v", err)
 	}
@@ -70,7 +71,7 @@ func TestCompareCluster_IncludesChartWithMissingVersionWarningOnly(t *testing.T)
 		t.Fatalf("write render warning: %v", err)
 	}
 
-	report, err := compareCluster("kube-bravo", baselineOutput, currentOutput, diffOutput, 3, false, map[string]config.Release{}, map[string]config.Release{})
+	report, err := compareCluster("kube-bravo", baselineOutput, currentOutput, diffOutput, 3, false, diff.IgnoreOptions{}, map[string]config.Release{}, map[string]config.Release{})
 	if err != nil {
 		t.Fatalf("compareCluster returned error: %v", err)
 	}
@@ -79,6 +80,105 @@ func TestCompareCluster_IncludesChartWithMissingVersionWarningOnly(t *testing.T)
 	}
 	if report.Charts[0].RenderWarning != warning {
 		t.Fatalf("unexpected render warning %q", report.Charts[0].RenderWarning)
+	}
+}
+
+func TestCompareCluster_SuppressesIgnoredOnlyMetadataChanges(t *testing.T) {
+	root := t.TempDir()
+	baselineOutput := filepath.Join(root, "baseline")
+	currentOutput := filepath.Join(root, "current")
+	diffOutput := filepath.Join(root, "diff")
+
+	writeRenderedResource(t, filepath.Join(baselineOutput, "kube-bravo", "outline", "resources", "apps_v1_Deployment_demo_outline.yaml"), `apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: outline
+  namespace: demo
+  labels:
+    app.kubernetes.io/version: 1.8.0
+    helm.sh/chart: outline-0.8.0
+spec:
+  template:
+    metadata:
+      annotations:
+        checksum/config: old
+`)
+	writeRenderedResource(t, filepath.Join(currentOutput, "kube-bravo", "outline", "resources", "apps_v1_Deployment_demo_outline.yaml"), `apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: outline
+  namespace: demo
+  labels:
+    app.kubernetes.io/version: 1.8.1
+    helm.sh/chart: outline-0.9.0
+spec:
+  template:
+    metadata:
+      annotations:
+        checksum/config: new
+`)
+
+	report, err := compareCluster("kube-bravo", baselineOutput, currentOutput, diffOutput, 3, false, diff.IgnoreOptions{UseDefaults: true}, map[string]config.Release{}, map[string]config.Release{})
+	if err != nil {
+		t.Fatalf("compareCluster returned error: %v", err)
+	}
+	if len(report.Charts) != 0 {
+		t.Fatalf("expected ignored-only chart to be omitted, got %#v", report.Charts)
+	}
+	if report.Changed != 0 {
+		t.Fatalf("expected no changed resources, got %d", report.Changed)
+	}
+	if _, err := os.Stat(filepath.Join(diffOutput, "kube-bravo", "outline", "apps_v1_Deployment_demo_outline.yaml.diff")); err == nil {
+		t.Fatalf("ignored-only raw diff artifact should not be written")
+	}
+}
+
+func TestCompareCluster_KeepsMixedResourceAfterFilteringIgnoredChanges(t *testing.T) {
+	root := t.TempDir()
+	baselineOutput := filepath.Join(root, "baseline")
+	currentOutput := filepath.Join(root, "current")
+	diffOutput := filepath.Join(root, "diff")
+
+	writeRenderedResource(t, filepath.Join(baselineOutput, "kube-bravo", "outline", "resources", "apps_v1_Deployment_demo_outline.yaml"), `apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: outline
+  namespace: demo
+  labels:
+    app.kubernetes.io/version: 1.8.0
+spec:
+  replicas: 2
+`)
+	writeRenderedResource(t, filepath.Join(currentOutput, "kube-bravo", "outline", "resources", "apps_v1_Deployment_demo_outline.yaml"), `apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: outline
+  namespace: demo
+  labels:
+    app.kubernetes.io/version: 1.8.1
+spec:
+  replicas: 3
+`)
+
+	report, err := compareCluster("kube-bravo", baselineOutput, currentOutput, diffOutput, 3, false, diff.IgnoreOptions{UseDefaults: true}, map[string]config.Release{}, map[string]config.Release{})
+	if err != nil {
+		t.Fatalf("compareCluster returned error: %v", err)
+	}
+	if report.Changed != 1 {
+		t.Fatalf("expected one changed resource, got %d", report.Changed)
+	}
+	if len(report.Charts) != 1 || len(report.Charts[0].Resources) != 1 {
+		t.Fatalf("expected one chart with one resource, got %#v", report.Charts)
+	}
+	resource := report.Charts[0].Resources[0]
+	if got := changeSummaries(resource.Result.Changes); strings.Join(got, "\n") != "changed spec.replicas" {
+		t.Fatalf("unexpected filtered changes: %v", got)
+	}
+	if strings.Contains(resource.Semantic, "app.kubernetes.io/version") {
+		t.Fatalf("ignored version label leaked into semantic output:\n%s", resource.Semantic)
+	}
+	if resource.Assessment.Level != "high" {
+		t.Fatalf("expected severity to be based on replica change, got %#v", resource.Assessment)
 	}
 }
 
@@ -332,6 +432,23 @@ func TestBuildRendersMergeBaseCurrentAndSelectedClusters(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), `cluster "missing" does not exist`) {
 		t.Fatalf("expected selected cluster error, got %v", err)
 	}
+}
+
+func writeRenderedResource(t *testing.T, path, body string) {
+	t.Helper()
+	writeReportTestFile(t, path, body)
+	chartDir := filepath.Dir(filepath.Dir(path))
+	if err := os.WriteFile(filepath.Join(chartDir, "namespace.txt"), []byte("demo\n"), 0o644); err != nil {
+		t.Fatalf("write namespace: %v", err)
+	}
+}
+
+func changeSummaries(changes []diff.Change) []string {
+	out := make([]string, 0, len(changes))
+	for _, change := range changes {
+		out = append(out, change.State+" "+diff.PathString(change.Path))
+	}
+	return out
 }
 
 func writeReportTestFile(t *testing.T, path, body string) {

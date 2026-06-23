@@ -23,6 +23,9 @@ func TestLoadRepoConfigUsesDefaultsWhenNoFileOrEnvIsPresent(t *testing.T) {
 	if !slices.Equal(cfg.Layout.Apps.Files, []string{"apps.yaml"}) {
 		t.Fatalf("expected default apps files, got %v", cfg.Layout.Apps.Files)
 	}
+	if !cfg.Diff.Ignore.Defaults {
+		t.Fatalf("expected default diff ignore rules to be enabled")
+	}
 }
 
 func TestLoadRepoConfigReadsOptionalConfigFile(t *testing.T) {
@@ -55,6 +58,108 @@ func TestLoadRepoConfigReadsAppsFiles(t *testing.T) {
 	}
 	if !slices.Equal(cfg.Layout.Apps.Files, []string{"apps.yaml", "apps-dev.yaml"}) {
 		t.Fatalf("unexpected apps files: %v", cfg.Layout.Apps.Files)
+	}
+}
+
+func TestLoadRepoConfigReadsDiffIgnoreConfig(t *testing.T) {
+	root := t.TempDir()
+	t.Setenv(EnvConfigYAML, "")
+	t.Setenv(EnvAppsFiles, "")
+	writeFile(t, filepath.Join(root, "config.yaml"), `diff:
+  ignore:
+    defaults: false
+    metadata:
+      - locations:
+          - metadata
+          - spec.template.metadata
+        labels:
+          - app.kubernetes.io/version
+        annotations:
+          - checksum/*
+`)
+
+	cfg, err := LoadRepoConfig(root)
+	if err != nil {
+		t.Fatalf("LoadRepoConfig returned error: %v", err)
+	}
+	if cfg.Diff.Ignore.Defaults {
+		t.Fatalf("expected defaults to be disabled")
+	}
+	if len(cfg.Diff.Ignore.Metadata) != 1 {
+		t.Fatalf("expected one metadata ignore rule, got %d", len(cfg.Diff.Ignore.Metadata))
+	}
+	rule := cfg.Diff.Ignore.Metadata[0]
+	if !slices.Equal(rule.Locations, []string{"metadata", "spec.template.metadata"}) {
+		t.Fatalf("unexpected locations: %v", rule.Locations)
+	}
+	if !slices.Equal(rule.Labels, []string{"app.kubernetes.io/version"}) {
+		t.Fatalf("unexpected labels: %v", rule.Labels)
+	}
+	if !slices.Equal(rule.Annotations, []string{"checksum/*"}) {
+		t.Fatalf("unexpected annotations: %v", rule.Annotations)
+	}
+}
+
+func TestLoadRepoConfigRejectsInvalidDiffIgnoreConfig(t *testing.T) {
+	tests := []struct {
+		name   string
+		body   string
+		needle string
+	}{
+		{
+			name: "empty locations",
+			body: `diff:
+  ignore:
+    metadata:
+      - labels: ["helm.sh/chart"]
+`,
+			needle: "locations must contain at least one path",
+		},
+		{
+			name: "empty labels and annotations",
+			body: `diff:
+  ignore:
+    metadata:
+      - locations: ["metadata"]
+`,
+			needle: "must contain at least one label or annotation pattern",
+		},
+		{
+			name: "invalid location",
+			body: `diff:
+  ignore:
+    metadata:
+      - locations: ["spec..metadata"]
+        labels: ["helm.sh/chart"]
+`,
+			needle: "relative semantic path",
+		},
+		{
+			name: "invalid glob",
+			body: `diff:
+  ignore:
+    metadata:
+      - locations: ["metadata"]
+        annotations: ["checksum/?"]
+`,
+			needle: "only supports *",
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			root := t.TempDir()
+			t.Setenv(EnvConfigYAML, "")
+			t.Setenv(EnvAppsFiles, "")
+			writeFile(t, filepath.Join(root, "config.yaml"), tc.body)
+
+			_, err := LoadRepoConfig(root)
+			if err == nil {
+				t.Fatal("expected config validation error")
+			}
+			if !strings.Contains(err.Error(), tc.needle) {
+				t.Fatalf("expected error to contain %q, got %v", tc.needle, err)
+			}
+		})
 	}
 }
 

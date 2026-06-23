@@ -10,6 +10,7 @@ import (
 
 	"github.com/sohooo/moebius/internal/cli"
 	"github.com/sohooo/moebius/internal/config"
+	"github.com/sohooo/moebius/internal/diff"
 	"github.com/sohooo/moebius/internal/gitrepo"
 	"github.com/sohooo/moebius/internal/helmrender"
 	"github.com/sohooo/moebius/internal/output"
@@ -124,7 +125,7 @@ func Build(opts cli.Options) ([]output.ClusterReport, string, error) {
 		if err != nil {
 			return nil, "", err
 		}
-		report, err := compareCluster(cluster, baselineOutput, currentOutput, diffOutput, opts.ContextLines, opts.Validate, baselineReleases, currentReleases)
+		report, err := compareCluster(cluster, baselineOutput, currentOutput, diffOutput, opts.ContextLines, opts.Validate, diffIgnoreOptions(repoConfig), baselineReleases, currentReleases)
 		if err != nil {
 			return nil, "", err
 		}
@@ -132,6 +133,20 @@ func Build(opts cli.Options) ([]output.ClusterReport, string, error) {
 	}
 
 	return reports, outputDir, nil
+}
+
+func diffIgnoreOptions(cfg config.RepoConfig) diff.IgnoreOptions {
+	out := diff.IgnoreOptions{
+		UseDefaults: cfg.Diff.Ignore.Defaults,
+	}
+	for _, rule := range cfg.Diff.Ignore.Metadata {
+		out.Metadata = append(out.Metadata, diff.MetadataIgnoreRule{
+			Locations:   rule.Locations,
+			Labels:      rule.Labels,
+			Annotations: rule.Annotations,
+		})
+	}
+	return out
 }
 
 func loadReleasesIfPresent(root string, layout config.LayoutConfig, cluster string) (map[string]config.Release, error) {

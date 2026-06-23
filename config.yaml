@@ -36,3 +36,9 @@ layout:
 
     # Optional compatibility fallback checked if the primary path does not exist.
     fallback_path: overrides/{name}.yaml
+
+diff:
+  ignore:
+    # Built-in rules suppress common Helm metadata churn such as chart/version
+    # labels and checksum annotations on resource and pod-template metadata.
+    defaults: true

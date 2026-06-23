@@ -263,6 +263,30 @@ Fix:
 - use `--comment-mode summary+artifacts` intentionally for large repos
 - raise `--max-comment-bytes` only if your GitLab instance accepts larger MR descriptions or notes
 
+## Expected Helm metadata diff is missing
+
+What it means:
+- `møbius` suppresses known non-actionable Helm metadata churn by default
+- labels such as `app.kubernetes.io/version` and `helm.sh/chart`, plus checksum annotations such as `checksum/config`, may be ignored
+
+How to verify:
+- check [configuration.md](configuration.md#diff-ignore-rules)
+- inspect the effective repo `config.yaml`
+- check whether the GitLab job sets `MOBIUS_CONFIG_YAML`
+
+Fix:
+- disable built-ins if those metadata changes are important in this pipeline:
+
+```yaml
+variables:
+  MOBIUS_CONFIG_YAML: |
+    diff:
+      ignore:
+        defaults: false
+```
+
+- if adding CI-specific ignore rules, include the full desired `diff.ignore.metadata` list in `MOBIUS_CONFIG_YAML`; it is not append-only
+
 ## Tag exists but GitHub Release or GHCR image is missing
 
 What it means:

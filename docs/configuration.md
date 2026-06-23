@@ -44,6 +44,7 @@ It can define:
 - field remapping for release entries
 - required canonical fields
 - primary and fallback override path patterns
+- semantic diff ignore rules for non-actionable metadata churn
 
 Each apps file must remain a top-level YAML list of release objects. `møbius` does not support nested release extraction, arbitrary YAML queries, or custom templating rules.
 
@@ -68,6 +69,9 @@ layout:
   overrides:
     path: overrides/{project}/{name}.yaml
     fallback_path: overrides/{name}.yaml
+diff:
+  ignore:
+    defaults: true
 ```
 
 ## `MOBIUS_CONFIG_YAML`
@@ -130,9 +134,75 @@ Configuration precedence is:
 
 `MOBIUS_APPS_FILES` and `--apps-files` accept comma-separated files, for example `apps.yaml,apps-dev.yaml`.
 
+## Diff Ignore Rules
+
+`møbius` suppresses common Helm metadata churn by default:
+
+- `metadata.labels.app.kubernetes.io/version`
+- `metadata.labels.helm.sh/chart`
+- `*.metadata.annotations.checksum/*` at common resource and pod-template metadata locations
+
+This keeps chart version labels and render-time checksum annotations from creating noisy MR report entries when no actionable resource fields changed.
+
+Disable the built-ins:
+
+```yaml
+diff:
+  ignore:
+    defaults: false
+```
+
+Add repo-specific metadata ignore rules:
+
+```yaml
+diff:
+  ignore:
+    defaults: true
+    metadata:
+      - locations:
+          - metadata
+          - spec.template.metadata
+          - spec.jobTemplate.spec.template.metadata
+        labels:
+          - app.kubernetes.io/version
+          - helm.sh/chart
+        annotations:
+          - checksum/*
+          - rollme
+```
+
+Rules are intentionally limited to labels and annotations. `locations` are exact semantic paths to metadata objects; `labels` and `annotations` are key patterns where `*` matches within the full key, for example `checksum/*` matches `checksum/config` and `checksum/secret`.
+
+If every semantic change in a resource is ignored, the resource is treated as unchanged and omitted from the report. If a resource has both ignored and actionable changes, only the actionable changes are shown.
+
+### CI Overrides
+
+Use `MOBIUS_CONFIG_YAML` to change ignore behavior in a GitLab pipeline without editing the checked-in `config.yaml`:
+
+```yaml
+variables:
+  MOBIUS_CONFIG_YAML: |
+    diff:
+      ignore:
+        defaults: true
+        metadata:
+          - locations:
+              - metadata
+              - spec.template.metadata
+              - spec.jobTemplate.spec.template.metadata
+            labels:
+              - app.example.com/build-id
+            annotations:
+              - checksum/*
+              - rollme
+```
+
+`MOBIUS_CONFIG_YAML` is applied as a config overlay, not as an append-only list operation. If the repo already defines `diff.ignore.metadata` and the pipeline should add one more rule, put the full desired `metadata` list in `MOBIUS_CONFIG_YAML`.
+
 ## Practical Recommendations
 
 - use defaults when the repo already matches the built-in layout
 - use `config.yaml` for repo-owned conventions and local clarity
 - use `MOBIUS_CONFIG_YAML` for CI/container setups that should not depend on a checked-in config file
 - keep field remapping minimal and explicit
+- keep diff ignore rules narrow; prefer labels and annotations that are known render noise
