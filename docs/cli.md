@@ -1,5 +1,7 @@
 # CLI Reference
 
+[Back to documentation index](index.md)
+
 This page summarizes the commands and flags most users need. Run `mobius --help` for the exact help text in the installed binary.
 
 ## Commands

@@ -1,5 +1,7 @@
 # Releases And Distribution
 
+[Back to documentation index](index.md)
+
 `møbius` is distributed in three ways:
 
 - Go install:

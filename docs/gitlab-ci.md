@@ -1,8 +1,10 @@
 # GitLab MR Report Guide
 
+[Back to documentation index](index.md)
+
 ## Purpose
 
-`møbius` is intended to run inside a GitLab merge request pipeline for the GitOps repository that defines Kubernetes clusters. The MR report answers one reviewer question:
+`møbius` is intended to run inside a GitLab merge request pipeline for GitOps cluster repositories and single Helm chart repositories. The MR report answers one reviewer question:
 
 > What Kubernetes resources would this merge request actually add, remove, or change after Helm rendering, values overrides, and schema validation?
 
@@ -31,7 +33,23 @@ The report is optimized for cloud platform review:
 
 For details on how reviewers should read each report section, see [report.md](report.md).
 
-## Quickstart
+## Contents
+
+| Section | Use |
+| --- | --- |
+| [Choose Your Repository Type](#choose-your-repository-type) | Pick the correct quickstart for a cluster repo or chart repo. |
+| [Required Environment](#required-environment) | Configure GitLab tokens, MR variables, repository layout, and overrides. |
+| [Customization Options](#customization-options) | Tune CLI flags, apps files, layout, and diff ignore behavior. |
+| [Common Pipeline Variants](#common-pipeline-variants) | Continue past render failures, accept duplicate keys, or print markdown only. |
+| [Comment Preflight](#comment-preflight) | Understand publish-readiness checks. |
+| [Artifacts](#artifacts) | Inspect generated render, diff, warning, and summary files. |
+| [Failure Triage](#failure-triage) | Debug failed or incomplete reports. |
+
+## Choose Your Repository Type
+
+Use the GitOps cluster repository quickstart when the repository defines many cluster releases through apps files. Use the single Helm chart repository quickstart when the repository itself is one chart.
+
+### GitOps Cluster Repository
 
 Use this job when the repository follows the default layout:
 

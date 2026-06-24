@@ -1,3 +1,7 @@
+# Standalone Markdown Sample
+
+[Back to documentation index](index.md)
+
 This sample shows standalone markdown output from `mobius diff --output-format markdown`. It intentionally does not include GitLab MR-only sections such as Review Focus and Attention Required.
 
 ## Cluster `kube-bravo`

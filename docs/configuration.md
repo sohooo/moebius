@@ -1,5 +1,7 @@
 # Configuration
 
+[Back to documentation index](index.md)
+
 `møbius` resolves repository layout configuration in this precedence order:
 
 1. built-in defaults

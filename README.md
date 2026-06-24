@@ -38,6 +38,8 @@ mobius version
 
 ## Quickstart
 
+Start with the full documentation hub: [docs/index.md](docs/index.md).
+
 Run a local diff:
 
 ```bash
@@ -90,6 +92,8 @@ This is the recommended production path:
 - fetch the MR target branch explicitly
 - keep `.mobius-out/` as the canonical debug surface
 
+Detailed pipeline setup is in the [GitLab CI guide](docs/gitlab-ci.md).
+
 For a repository that contains a single Helm chart instead of a cluster apps layout, use chart mode:
 
 ```bash
@@ -98,23 +102,15 @@ mobius diff --chart-path . --values-files values.yaml,values-ci.yaml
 
 Chart mode compares the chart rendered at the merge-base with the current commit. It auto-detects a root `Chart.yaml` when no cluster layout is present, defaults to `values.yaml` if it exists, and publishes the same MR report format through `mobius comment`.
 
+See the [documentation index](docs/index.md) to choose between cluster repository mode and single-chart mode.
+
 Base ref behavior:
 - `--base-ref` wins when set explicitly
 - otherwise `møbius` tries `origin/HEAD`, then `main`, then `master`
 
 ## Documentation
 
-- GitLab CI guide: [docs/gitlab-ci.md](docs/gitlab-ci.md)
-- CLI reference: [docs/cli.md](docs/cli.md)
-- Configuration and layout: [docs/configuration.md](docs/configuration.md)
-- MR report guide: [docs/report.md](docs/report.md)
-- Troubleshooting: [docs/troubleshooting.md](docs/troubleshooting.md)
-- Releases and distribution: [docs/releases.md](docs/releases.md)
-- Schema bundles and maintenance: [docs/schema-bundles.md](docs/schema-bundles.md)
-
-Sample outputs:
-- Markdown report: [docs/sample-report.md](docs/sample-report.md)
-- GitLab MR report: [docs/sample-comment.md](docs/sample-comment.md)
+Use [docs/index.md](docs/index.md) as the single entry point for setup, configuration, report interpretation, troubleshooting, releases, schema bundles, and sample outputs.
 
 ## What `møbius` Does
 

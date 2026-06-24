@@ -1,5 +1,7 @@
 # Troubleshooting
 
+[Back to documentation index](index.md)
+
 This page focuses on concrete symptom → cause → fix guidance for `møbius`.
 
 Start with artifacts when available:

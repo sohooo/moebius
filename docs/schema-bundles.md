@@ -1,5 +1,7 @@
 # Schema Bundles
 
+[Back to documentation index](index.md)
+
 `møbius` validates manifests offline at runtime.
 
 It does that with:
