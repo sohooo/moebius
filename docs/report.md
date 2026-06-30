@@ -92,6 +92,8 @@ Use these artifacts first:
 | --- | --- |
 | `.mobius-out/index.md` | Human-readable summary and links to generated artifacts. |
 | `.mobius-out/summary.json` | Machine-readable counts and artifact names. |
+| `.mobius-out/run-summary.md` | Effective options, apps files, selected releases, skipped releases, and reasons. |
+| `.mobius-out/run-summary.json` | Machine-readable run summary for diagnostics. |
 | `.mobius-out/current/` and `.mobius-out/baseline/` | Rendered manifests and split resources for each side of the comparison. |
 | `.mobius-out/diff/` | Per-resource raw and semantic diffs. |
 | `.mobius-out/errors/` | Render or split failures. |

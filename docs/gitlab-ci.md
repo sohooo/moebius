@@ -423,6 +423,8 @@ When `--output-dir .mobius-out` is used, `møbius` writes:
 | --- | --- |
 | `.mobius-out/index.md` | Human-readable artifact index and cluster summary. |
 | `.mobius-out/summary.json` | Machine-readable summary counts and artifact names. |
+| `.mobius-out/run-summary.md` | Human-readable effective config, selected inputs, considered releases, and skip reasons. |
+| `.mobius-out/run-summary.json` | Machine-readable run summary for diagnostics and support. |
 | `.mobius-out/comment-preflight.json` | GitLab publish preflight status. |
 | `.mobius-out/current/...` | Current rendered manifests and split resources. |
 | `.mobius-out/baseline/...` | Merge-base rendered manifests and split resources. |
@@ -436,8 +438,9 @@ Start with the artifacts:
 
 1. Open `.mobius-out/comment-preflight.json`.
 2. Open `.mobius-out/index.md`.
-3. Inspect `.mobius-out/errors/` and `.mobius-out/warnings/`.
-4. If the failure is GitLab-specific, see [troubleshooting.md](troubleshooting.md).
+3. Open `.mobius-out/run-summary.md` to confirm effective options, apps files, and release pruning decisions.
+4. Inspect `.mobius-out/errors/` and `.mobius-out/warnings/`.
+5. If the failure is GitLab-specific, see [troubleshooting.md](troubleshooting.md).
 
 Useful local checks:
 

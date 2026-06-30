@@ -47,7 +47,7 @@ func shouldUseChartMode(repo *gitrepo.Repo, layout config.LayoutConfig, opts cli
 	return false, fmt.Errorf("repository contains both a root Chart.yaml and discoverable clusters; use --chart-path for chart mode or --cluster/--all-clusters for cluster mode")
 }
 
-func buildChartModeReport(repo *gitrepo.Repo, repoConfig config.RepoConfig, opts cli.Options, mergeBase *object.Commit, changedPaths []string, baselineRoot, currentOutput, baselineOutput, diffOutput string, renderer *helmrender.Renderer) ([]output.ClusterReport, error) {
+func buildChartModeReport(repo *gitrepo.Repo, repoConfig config.RepoConfig, opts cli.Options, mergeBase *object.Commit, changedPaths []string, baselineRoot, currentOutput, baselineOutput, diffOutput string, renderer *helmrender.Renderer, summary *runSummary) ([]output.ClusterReport, error) {
 	chartPath := opts.ChartPath
 	if chartPath == "" {
 		chartPath = "."
@@ -65,7 +65,14 @@ func buildChartModeReport(repo *gitrepo.Repo, repoConfig config.RepoConfig, opts
 	if !currentExists && !baselineExists {
 		return nil, fmt.Errorf("chart %q does not exist in current worktree or at merge-base", chartPath)
 	}
+	clusterSummary := runSummaryCluster{
+		Name:   chartModeCluster,
+		Status: "considered",
+	}
 	if !chartPathChanged(chartPath, changedPaths) && currentExists == baselineExists {
+		clusterSummary.Status = "skipped"
+		clusterSummary.Releases = []runSummaryRelease{chartSummaryRelease(chartPath, opts.ReleaseName, opts.Namespace, currentExists, baselineExists, []string{"not_affected"}, "skipped", "not_rendered", "not_reported")}
+		summary.addCluster(clusterSummary)
 		return nil, nil
 	}
 	if baselineExists {
@@ -78,6 +85,7 @@ func buildChartModeReport(repo *gitrepo.Repo, repoConfig config.RepoConfig, opts
 	if err != nil {
 		return nil, err
 	}
+	clusterSummary.Releases = []runSummaryRelease{chartSummaryRelease(chartPath, releaseName, opts.Namespace, currentExists, baselineExists, chartModeReasons(currentExists, baselineExists), "selected", "not_rendered", "not_reported")}
 	currentRelease := config.Release{Name: releaseName, Namespace: opts.Namespace, Chart: chartPath}
 	baselineRelease := currentRelease
 	currentReleases := map[string]config.Release{}
@@ -108,9 +116,47 @@ func buildChartModeReport(repo *gitrepo.Repo, repoConfig config.RepoConfig, opts
 		return nil, err
 	}
 	if len(report.Charts) == 0 {
+		clusterSummary.Status = "no_effective_changes"
+		clusterSummary.Releases[0].RenderResult = releaseRenderResult(baselineOutput, currentOutput, chartModeCluster, releaseName, true)
+		clusterSummary.Releases[0].ReportResult = "no_effective_changes_after_diff_ignore"
+		summary.addCluster(clusterSummary)
 		return nil, nil
 	}
+	clusterSummary.Status = "reported"
+	clusterSummary.Releases[0].RenderResult = releaseRenderResult(baselineOutput, currentOutput, chartModeCluster, releaseName, true)
+	if result := releaseReportResults(report)[releaseName]; result != "" {
+		clusterSummary.Releases[0].ReportResult = result
+	}
+	summary.addCluster(clusterSummary)
 	return []output.ClusterReport{report}, nil
+}
+
+func chartSummaryRelease(chartPath, releaseName, namespace string, currentExists, baselineExists bool, reasons []string, decision, renderResult, reportResult string) runSummaryRelease {
+	if releaseName == "" {
+		releaseName = chartPath
+	}
+	return runSummaryRelease{
+		Name:           releaseName,
+		Namespace:      namespace,
+		SourceFile:     "Chart.yaml",
+		CurrentExists:  currentExists,
+		BaselineExists: baselineExists,
+		Decision:       decision,
+		Reasons:        reasons,
+		RenderResult:   renderResult,
+		ReportResult:   reportResult,
+	}
+}
+
+func chartModeReasons(currentExists, baselineExists bool) []string {
+	switch {
+	case currentExists && !baselineExists:
+		return []string{"release_added"}
+	case !currentExists && baselineExists:
+		return []string{"release_removed"}
+	default:
+		return []string{"local_chart_changed"}
+	}
 }
 
 func chartReleaseName(root, baselineRoot, chartPath, override string, preferCurrent bool) (string, error) {

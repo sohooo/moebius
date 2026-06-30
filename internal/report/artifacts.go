@@ -38,6 +38,8 @@ func writeArtifactIndex(outputDir string, reports []output.ClusterReport) error 
 	fmt.Fprintln(&b, "- `diff/`: raw and semantic per-resource diffs")
 	fmt.Fprintln(&b, "- `errors/`: render failures persisted even in hard-fail mode")
 	fmt.Fprintln(&b, "- `warnings/`: non-fatal render warnings such as permissive duplicate-key parsing")
+	fmt.Fprintln(&b, "- `run-summary.md`: effective configuration and release selection decisions")
+	fmt.Fprintln(&b, "- `run-summary.json`: machine-readable run summary")
 	fmt.Fprintln(&b)
 
 	errors := listArtifactFiles(filepath.Join(outputDir, "errors"))

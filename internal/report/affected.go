@@ -15,6 +15,12 @@ type releaseSelection struct {
 	names map[string]struct{}
 }
 
+type affectedPlan struct {
+	releaseSelection
+	Reasons        map[string][]string
+	FallbackReason string
+}
+
 func allReleasesSelection() releaseSelection {
 	return releaseSelection{all: true}
 }
@@ -42,19 +48,34 @@ type overrideFingerprint struct {
 }
 
 func planAffectedReleases(root, baselineRoot string, layout config.LayoutConfig, cluster string, currentExists, baselineExists bool, changedPaths []string, baselineReleases, currentReleases map[string]config.Release) (releaseSelection, error) {
-	if currentExists != baselineExists {
-		return allReleasesSelection(), nil
-	}
-	if configChanged(changedPaths) {
-		return allReleasesSelection(), nil
-	}
+	plan, err := planAffectedReleaseDetails(root, baselineRoot, layout, cluster, currentExists, baselineExists, changedPaths, baselineReleases, currentReleases)
+	return plan.releaseSelection, err
+}
 
+func planAffectedReleaseDetails(root, baselineRoot string, layout config.LayoutConfig, cluster string, currentExists, baselineExists bool, changedPaths []string, baselineReleases, currentReleases map[string]config.Release) (affectedPlan, error) {
 	names := map[string]struct{}{}
 	for name := range baselineReleases {
 		names[name] = struct{}{}
 	}
 	for name := range currentReleases {
 		names[name] = struct{}{}
+	}
+	reasons := map[string][]string{}
+	if currentExists != baselineExists {
+		reason := "cluster_added"
+		if baselineExists {
+			reason = "cluster_removed"
+		}
+		for name := range names {
+			reasons[name] = append(reasons[name], reason)
+		}
+		return affectedPlan{releaseSelection: allReleasesSelection(), Reasons: reasons, FallbackReason: reason}, nil
+	}
+	if configChanged(changedPaths) {
+		for name := range names {
+			reasons[name] = append(reasons[name], "config_changed_full_cluster_fallback")
+		}
+		return affectedPlan{releaseSelection: allReleasesSelection(), Reasons: reasons, FallbackReason: "config_changed_full_cluster_fallback"}, nil
 	}
 
 	affected := map[string]struct{}{}
@@ -64,17 +85,25 @@ func planAffectedReleases(root, baselineRoot string, layout config.LayoutConfig,
 	for name := range names {
 		baselineRelease, baselineOK := baselineReleases[name]
 		currentRelease, currentOK := currentReleases[name]
-		if !baselineOK || !currentOK || !reflect.DeepEqual(baselineRelease, currentRelease) {
+		switch {
+		case !baselineOK:
 			affected[name] = struct{}{}
+			reasons[name] = append(reasons[name], "release_added")
+		case !currentOK:
+			affected[name] = struct{}{}
+			reasons[name] = append(reasons[name], "release_removed")
+		case !reflect.DeepEqual(baselineRelease, currentRelease):
+			affected[name] = struct{}{}
+			reasons[name] = append(reasons[name], "release_attributes_changed")
 		}
 
 		baselineOverride, err := overrideFingerprintForRelease(baselineRoot, layout, cluster, baselineRelease, baselineOK)
 		if err != nil {
-			return releaseSelection{}, err
+			return affectedPlan{}, err
 		}
 		currentOverride, err := overrideFingerprintForRelease(root, layout, cluster, currentRelease, currentOK)
 		if err != nil {
-			return releaseSelection{}, err
+			return affectedPlan{}, err
 		}
 		if baselineOverride.Exists {
 			overridePaths[baselineOverride.Path] = struct{}{}
@@ -84,17 +113,58 @@ func planAffectedReleases(root, baselineRoot string, layout config.LayoutConfig,
 		}
 		if baselineOverride != currentOverride {
 			affected[name] = struct{}{}
+			reasons[name] = append(reasons[name], overrideChangeReason(baselineOverride, currentOverride))
 		}
 
 		if localChartChanged(changedPaths, baselineRelease, baselineOK) || localChartChanged(changedPaths, currentRelease, currentOK) {
 			affected[name] = struct{}{}
+			reasons[name] = append(reasons[name], "local_chart_changed")
 		}
 	}
 
 	if hasUnmappedClusterChange(clusterChangedPaths, layout.Apps.Files, overridePaths) {
-		return allReleasesSelection(), nil
+		for name := range names {
+			reasons[name] = append(reasons[name], "unmapped_cluster_change_full_cluster_fallback")
+		}
+		return affectedPlan{releaseSelection: allReleasesSelection(), Reasons: normalizeReasonMap(names, reasons), FallbackReason: "unmapped_cluster_change_full_cluster_fallback"}, nil
 	}
-	return namedReleaseSelection(affected), nil
+	return affectedPlan{releaseSelection: namedReleaseSelection(affected), Reasons: normalizeReasonMap(names, reasons)}, nil
+}
+
+func normalizeReasonMap(names map[string]struct{}, reasons map[string][]string) map[string][]string {
+	for name := range names {
+		if len(reasons[name]) == 0 {
+			reasons[name] = []string{"not_affected"}
+		}
+		reasons[name] = uniqueStrings(reasons[name])
+	}
+	return reasons
+}
+
+func overrideChangeReason(baseline, current overrideFingerprint) string {
+	switch {
+	case !baseline.Exists && current.Exists:
+		return "override_added"
+	case baseline.Exists && !current.Exists:
+		return "override_removed"
+	case baseline.Path != current.Path:
+		return "override_path_switched"
+	default:
+		return "override_changed"
+	}
+}
+
+func uniqueStrings(values []string) []string {
+	seen := map[string]struct{}{}
+	var out []string
+	for _, value := range values {
+		if _, ok := seen[value]; ok {
+			continue
+		}
+		seen[value] = struct{}{}
+		out = append(out, value)
+	}
+	return out
 }
 
 func configChanged(changedPaths []string) bool {

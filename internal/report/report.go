@@ -24,7 +24,7 @@ func Build(opts cli.Options) ([]output.ClusterReport, string, error) {
 	if err != nil {
 		return nil, "", err
 	}
-	repoConfig, _, err := config.LoadRepoConfigWithMetadata(repo.Root())
+	repoConfig, configMeta, err := config.LoadRepoConfigWithMetadata(repo.Root())
 	if err != nil {
 		return nil, "", err
 	}
@@ -37,7 +37,7 @@ func Build(opts cli.Options) ([]output.ClusterReport, string, error) {
 	if err != nil {
 		return nil, "", err
 	}
-	_, baseRef, err := repo.ResolveBaseRef(opts.BaseRef)
+	baseRefName, baseRef, err := repo.ResolveBaseRef(opts.BaseRef)
 	if err != nil {
 		return nil, "", err
 	}
@@ -64,6 +64,7 @@ func Build(opts cli.Options) ([]output.ClusterReport, string, error) {
 			return nil, "", nil
 		}
 	}
+	summary := newRunSummary(opts, repoConfig, configMeta, layout, modeName(chartMode), baseRefName, head.Hash.String(), mergeBase.Hash.String(), changedPaths, clusters)
 
 	outputDir := opts.OutputDir
 	cleanupOutput := false
@@ -105,11 +106,12 @@ func Build(opts cli.Options) ([]output.ClusterReport, string, error) {
 
 	var reports []output.ClusterReport
 	defer func() {
+		_ = writeRunSummaryArtifacts(outputDir, summary)
 		_ = writeArtifactIndex(outputDir, reports)
 		_ = writeArtifactSummary(outputDir, reports)
 	}()
 	if chartMode {
-		reports, err = buildChartModeReport(repo, repoConfig, opts, mergeBase, changedPaths, baselineRoot, currentOutput, baselineOutput, diffOutput, renderer)
+		reports, err = buildChartModeReport(repo, repoConfig, opts, mergeBase, changedPaths, baselineRoot, currentOutput, baselineOutput, diffOutput, renderer, summary)
 		if err != nil {
 			return nil, "", err
 		}
@@ -128,28 +130,46 @@ func Build(opts cli.Options) ([]output.ClusterReport, string, error) {
 		if err := prepareBaselineClusterFiles(repo, mergeBase, layout, cluster, baselineRoot); err != nil {
 			return nil, "", err
 		}
-		baselineReleases, err := loadReleasesIfPresent(baselineRoot, layout, cluster)
+		clusterSummary := runSummaryCluster{
+			Name:              cluster,
+			Status:            "considered",
+			CurrentAppsFiles:  appsFilesExisting(repo.Root(), layout, cluster),
+			BaselineAppsFiles: nil,
+		}
+		clusterSummary.BaselineAppsFiles, err = appsFilesExistingAtCommit(repo, mergeBase, layout, cluster)
 		if err != nil {
 			return nil, "", err
 		}
-		currentReleases, err := loadReleasesIfPresent(repo.Root(), layout, cluster)
+
+		baselineReleases, baselineSources, _, err := loadReleaseInfoIfPresent(baselineRoot, layout, cluster)
 		if err != nil {
 			return nil, "", err
 		}
-		selection, err := planAffectedReleases(repo.Root(), baselineRoot, layout, cluster, currentExists, baselineExists, changedPaths, baselineReleases, currentReleases)
+		currentReleases, currentSources, currentWarnings, err := loadReleaseInfoIfPresent(repo.Root(), layout, cluster)
 		if err != nil {
 			return nil, "", err
 		}
+		for _, warning := range currentWarnings {
+			clusterSummary.Warnings = append(clusterSummary.Warnings, warning.Message)
+		}
+		selection, err := planAffectedReleaseDetails(repo.Root(), baselineRoot, layout, cluster, currentExists, baselineExists, changedPaths, baselineReleases, currentReleases)
+		if err != nil {
+			return nil, "", err
+		}
+		clusterSummary.FallbackReason = selection.FallbackReason
 		if selection.empty() {
+			clusterSummary.Status = "skipped"
+			clusterSummary.Releases = summarizeReleases(baselineReleases, currentReleases, baselineSources, currentSources, currentWarnings, selection, nil, baselineOutput, currentOutput, cluster)
+			summary.addCluster(clusterSummary)
 			continue
 		}
-		if err := prepareBaselineCharts(repo, mergeBase, layout, cluster, baselineRoot, baselineReleases, selection); err != nil {
+		if err := prepareBaselineCharts(repo, mergeBase, layout, cluster, baselineRoot, baselineReleases, selection.releaseSelection); err != nil {
 			return nil, "", err
 		}
-		if err := renderCluster(repo.Root(), layout, cluster, "current", currentOutput, selection, renderer, opts.RenderErrorMode, opts.DuplicateKeyMode); err != nil {
+		if err := renderCluster(repo.Root(), layout, cluster, "current", currentOutput, selection.releaseSelection, renderer, opts.RenderErrorMode, opts.DuplicateKeyMode); err != nil {
 			return nil, "", err
 		}
-		if err := renderCluster(baselineRoot, layout, cluster, "baseline", baselineOutput, selection, renderer, opts.RenderErrorMode, opts.DuplicateKeyMode); err != nil {
+		if err := renderCluster(baselineRoot, layout, cluster, "baseline", baselineOutput, selection.releaseSelection, renderer, opts.RenderErrorMode, opts.DuplicateKeyMode); err != nil {
 			return nil, "", err
 		}
 		report, err := compareCluster(cluster, baselineOutput, currentOutput, diffOutput, opts.ContextLines, opts.Validate, diffIgnoreOptions(repoConfig), baselineReleases, currentReleases)
@@ -157,12 +177,25 @@ func Build(opts cli.Options) ([]output.ClusterReport, string, error) {
 			return nil, "", err
 		}
 		if len(report.Charts) == 0 {
+			clusterSummary.Status = "no_effective_changes"
+			clusterSummary.Releases = summarizeReleases(baselineReleases, currentReleases, baselineSources, currentSources, currentWarnings, selection, nil, baselineOutput, currentOutput, cluster)
+			summary.addCluster(clusterSummary)
 			continue
 		}
+		clusterSummary.Status = "reported"
+		clusterSummary.Releases = summarizeReleases(baselineReleases, currentReleases, baselineSources, currentSources, currentWarnings, selection, releaseReportResults(report), baselineOutput, currentOutput, cluster)
+		summary.addCluster(clusterSummary)
 		reports = append(reports, report)
 	}
 
 	return reports, outputDir, nil
+}
+
+func modeName(chartMode bool) string {
+	if chartMode {
+		return "chart_repository"
+	}
+	return "cluster_repository"
 }
 
 func diffIgnoreOptions(cfg config.RepoConfig) diff.IgnoreOptions {
@@ -180,18 +213,25 @@ func diffIgnoreOptions(cfg config.RepoConfig) diff.IgnoreOptions {
 }
 
 func loadReleasesIfPresent(root string, layout config.LayoutConfig, cluster string) (map[string]config.Release, error) {
+	releases, _, _, err := loadReleaseInfoIfPresent(root, layout, cluster)
+	return releases, err
+}
+
+func loadReleaseInfoIfPresent(root string, layout config.LayoutConfig, cluster string) (map[string]config.Release, map[string]string, []config.ReleaseWarning, error) {
 	if !anyAppsFileExists(root, layout, cluster) {
-		return map[string]config.Release{}, nil
+		return map[string]config.Release{}, map[string]string{}, nil, nil
 	}
-	releases, err := config.LoadReleases(root, layout, cluster)
+	metadata, warnings, err := config.LoadReleaseMetadataWithWarnings(root, layout, cluster)
 	if err != nil {
-		return nil, err
+		return nil, nil, nil, err
 	}
-	out := make(map[string]config.Release, len(releases))
-	for _, release := range releases {
-		out[release.Name] = release
+	out := make(map[string]config.Release, len(metadata))
+	sources := make(map[string]string, len(metadata))
+	for _, item := range metadata {
+		out[item.Release.Name] = item.Release
+		sources[item.Release.Name] = item.SourceFile
 	}
-	return out, nil
+	return out, sources, warnings, nil
 }
 
 func fileExists(path string) bool {
@@ -208,6 +248,16 @@ func anyAppsFileExists(root string, layout config.LayoutConfig, cluster string) 
 	return false
 }
 
+func appsFilesExisting(root string, layout config.LayoutConfig, cluster string) []string {
+	var out []string
+	for _, appsFile := range layout.Apps.Files {
+		if fileExists(filepath.Join(config.ClusterDir(root, layout, cluster), filepath.FromSlash(appsFile))) {
+			out = append(out, appsFile)
+		}
+	}
+	return out
+}
+
 func anyAppsFileExistsAtCommit(repo *gitrepo.Repo, commit *object.Commit, layout config.LayoutConfig, cluster string) (bool, error) {
 	for _, appsFile := range layout.Apps.Files {
 		relPath := filepath.ToSlash(filepath.Join(layout.ClustersDir, cluster, appsFile))
@@ -220,4 +270,19 @@ func anyAppsFileExistsAtCommit(repo *gitrepo.Repo, commit *object.Commit, layout
 		}
 	}
 	return false, nil
+}
+
+func appsFilesExistingAtCommit(repo *gitrepo.Repo, commit *object.Commit, layout config.LayoutConfig, cluster string) ([]string, error) {
+	var out []string
+	for _, appsFile := range layout.Apps.Files {
+		relPath := filepath.ToSlash(filepath.Join(layout.ClustersDir, cluster, appsFile))
+		exists, err := repo.PathExistsAtCommit(commit, relPath)
+		if err != nil {
+			return nil, err
+		}
+		if exists {
+			out = append(out, appsFile)
+		}
+	}
+	return out, nil
 }

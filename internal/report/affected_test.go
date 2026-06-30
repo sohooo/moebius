@@ -87,11 +87,14 @@ func TestPlanAffectedReleasesFallsBackOnUnmappedClusterChange(t *testing.T) {
 	layout := config.Default().Layout
 	release := config.Release{Name: "outline", Namespace: "demo", Project: "default", Chart: "charts/outline"}
 	releases := map[string]config.Release{"outline": release}
-	selection, err := planAffectedReleases(t.TempDir(), t.TempDir(), layout, "kube-bravo", true, true, []string{"clusters/kube-bravo/unknown/input.yaml"}, releases, releases)
+	selection, err := planAffectedReleaseDetails(t.TempDir(), t.TempDir(), layout, "kube-bravo", true, true, []string{"clusters/kube-bravo/unknown/input.yaml"}, releases, releases)
 	if err != nil {
 		t.Fatalf("planAffectedReleases returned error: %v", err)
 	}
 	if !selection.all {
 		t.Fatalf("expected full-cluster fallback, got %#v", selection)
+	}
+	if selection.FallbackReason != "unmapped_cluster_change_full_cluster_fallback" {
+		t.Fatalf("unexpected fallback reason %q", selection.FallbackReason)
 	}
 }

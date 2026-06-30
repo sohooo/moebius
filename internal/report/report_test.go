@@ -510,6 +510,10 @@ func TestBuildPrunesUnaffectedReleases(t *testing.T) {
 			t.Fatalf("unexpected unaffected artifact %s, err=%v", rel, err)
 		}
 	}
+	summaryText := readReportTestFile(t, filepath.Join(outputDir, runSummaryMarkdownFilename))
+	if !strings.Contains(summaryText, "| `keycloak` | `apps.yaml` | `skipped` | `not_affected` | `not_rendered` | `not_reported` |") {
+		t.Fatalf("expected skipped keycloak in run summary, got:\n%s", summaryText)
+	}
 }
 
 func TestBuildDefaultAppsDevOverrideChangeIsReported(t *testing.T) {
@@ -554,6 +558,22 @@ func TestBuildDefaultAppsDevOverrideChangeIsReported(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(outputDir, "current/kube-bravo/dev-app/rendered.yaml")); err != nil {
 		t.Fatalf("expected current dev-app artifact: %v", err)
+	}
+	summaryText := readReportTestFile(t, filepath.Join(outputDir, runSummaryMarkdownFilename))
+	for _, needle := range []string{
+		"Apps files: `apps.yaml,apps-dev.yaml`",
+		"| `dev-app` | `apps-dev.yaml` | `selected` | `override_changed` | `rendered` | `produced_changes` |",
+	} {
+		if !strings.Contains(summaryText, needle) {
+			t.Fatalf("expected run summary to contain %q, got:\n%s", needle, summaryText)
+		}
+	}
+	var runSummary runSummary
+	if err := json.Unmarshal([]byte(readReportTestFile(t, filepath.Join(outputDir, runSummaryJSONFilename))), &runSummary); err != nil {
+		t.Fatalf("unmarshal run summary: %v", err)
+	}
+	if len(runSummary.Layout.AppsFiles) < 2 || runSummary.Layout.AppsFiles[1] != "apps-dev.yaml" {
+		t.Fatalf("expected apps-dev.yaml in run summary, got %#v", runSummary.Layout.AppsFiles)
 	}
 }
 
@@ -724,6 +744,15 @@ data:
 	} {
 		if _, err := os.Stat(filepath.Join(outputDir, rel)); err != nil {
 			t.Fatalf("expected chart artifact %s: %v", rel, err)
+		}
+	}
+	summaryText := readReportTestFile(t, filepath.Join(outputDir, runSummaryMarkdownFilename))
+	for _, needle := range []string{
+		"Mode: `chart_repository`",
+		"| `app` | `Chart.yaml` | `selected` | `local_chart_changed` | `rendered` | `produced_changes` |",
+	} {
+		if !strings.Contains(summaryText, needle) {
+			t.Fatalf("expected chart run summary to contain %q, got:\n%s", needle, summaryText)
 		}
 	}
 }
@@ -899,6 +928,15 @@ func writeReportTestFile(t *testing.T, path, body string) {
 	}
 }
 
+func readReportTestFile(t *testing.T, path string) string {
+	t.Helper()
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("ReadFile %s: %v", path, err)
+	}
+	return string(data)
+}
+
 func writeTinyChart(t *testing.T, root string) {
 	t.Helper()
 	writeReportTestFile(t, filepath.Join(root, "charts/hello-world/Chart.yaml"), "apiVersion: v2\nname: hello-world\nversion: 0.1.0\n")
@@ -1033,6 +1071,8 @@ func TestWriteArtifactIndex_IncludesErrorAndWarningArtifacts(t *testing.T) {
 	for _, needle := range []string{
 		"# møbius Artifacts",
 		"## Error Artifacts",
+		"`run-summary.md`: effective configuration and release selection decisions",
+		"`run-summary.json`: machine-readable run summary",
 		"warnings/current--kube-bravo--otel-stack.txt",
 		"errors/current--kube-bravo--otel-stack.txt",
 		"`kube-bravo`: 1 chart(s), added 1, removed 0, changed 2",

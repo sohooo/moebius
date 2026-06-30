@@ -82,8 +82,15 @@ type Release struct {
 }
 
 type ReleaseWarning struct {
-	ReleaseName string
-	Message     string
+	ReleaseName  string
+	Message      string
+	SelectedFile string
+	IgnoredFile  string
+}
+
+type ReleaseMetadata struct {
+	Release    Release
+	SourceFile string
 }
 
 func Default() RepoConfig {
@@ -265,8 +272,20 @@ func LoadReleases(root string, layout LayoutConfig, cluster string) ([]Release, 
 }
 
 func LoadReleasesWithWarnings(root string, layout LayoutConfig, cluster string) ([]Release, []ReleaseWarning, error) {
+	metadata, warnings, err := LoadReleaseMetadataWithWarnings(root, layout, cluster)
+	if err != nil {
+		return nil, nil, err
+	}
+	releases := make([]Release, 0, len(metadata))
+	for _, item := range metadata {
+		releases = append(releases, item.Release)
+	}
+	return releases, warnings, nil
+}
+
+func LoadReleaseMetadataWithWarnings(root string, layout LayoutConfig, cluster string) ([]ReleaseMetadata, []ReleaseWarning, error) {
 	paths := AppsPaths(root, layout, cluster)
-	releases := make([]Release, 0)
+	releases := make([]ReleaseMetadata, 0)
 	warnings := make([]ReleaseWarning, 0)
 	seenAcrossFiles := map[string]string{}
 	found := false
@@ -298,8 +317,10 @@ func LoadReleasesWithWarnings(root string, layout LayoutConfig, cluster string) 
 				seenInFile[release.Name] = struct{}{}
 				if winnerPath, ok := seenAcrossFiles[release.Name]; ok {
 					warnings = append(warnings, ReleaseWarning{
-						ReleaseName: release.Name,
-						Message:     fmt.Sprintf("release %q is defined in both %s and %s; using the higher-priority definition from %s", release.Name, filepath.Base(winnerPath), filepath.Base(path), filepath.Base(winnerPath)),
+						ReleaseName:  release.Name,
+						SelectedFile: filepath.Base(winnerPath),
+						IgnoredFile:  filepath.Base(path),
+						Message:      fmt.Sprintf("release %q is defined in both %s and %s; using the higher-priority definition from %s", release.Name, filepath.Base(winnerPath), filepath.Base(path), filepath.Base(winnerPath)),
 					})
 					continue
 				}
@@ -311,7 +332,10 @@ func LoadReleasesWithWarnings(root string, layout LayoutConfig, cluster string) 
 				continue
 			}
 			seenAcrossFiles[release.Name] = path
-			releases = append(releases, release)
+			releases = append(releases, ReleaseMetadata{
+				Release:    release,
+				SourceFile: filepath.Base(path),
+			})
 		}
 	}
 	if !found {
