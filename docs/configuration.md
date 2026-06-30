@@ -16,7 +16,7 @@ By default, cluster definitions live under `clusters/`.
 
 Expected structure:
 - `clusters/<cluster>/apps.yaml`
-- optional additional apps files such as `clusters/<cluster>/apps-dev.yaml`
+- `clusters/<cluster>/apps-dev.yaml` when a cluster has additional development/test releases
 - `clusters/<cluster>/overrides/<project>/<name>.yaml`
 - `clusters/<cluster>/overrides/<name>.yaml`
 
@@ -50,7 +50,7 @@ It can define:
 
 Each apps file must remain a top-level YAML list of release objects. `møbius` does not support nested release extraction, arbitrary YAML queries, or custom templating rules.
 
-When multiple apps files are configured, missing files are skipped per cluster. Earlier files have precedence: if the same release name appears in `apps.yaml` and `apps-dev.yaml`, the release from `apps.yaml` is used.
+By default, `møbius` reads `apps.yaml` and `apps-dev.yaml` in that order. Missing files are skipped per cluster. Earlier files have precedence: if the same release name appears in both files, the release from `apps.yaml` is used and the report highlights the duplicate definition as a warning.
 
 Example:
 

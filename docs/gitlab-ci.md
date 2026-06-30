@@ -164,7 +164,7 @@ The default repository layout is:
 clusters/
   kube-bravo/
     apps.yaml
-    apps-dev.yaml              # optional, if configured
+    apps-dev.yaml              # optional per cluster, included in the default apps file list
     overrides/
       default/
         hello-world.yaml
@@ -218,6 +218,8 @@ For every release, `møbius` looks for values overrides in this order:
 
 Overrides are shared for all configured apps files. For example, a release defined in `apps-dev.yaml` still uses `overrides/<project>/<name>.yaml`.
 
+If the same release name appears in both `apps.yaml` and `apps-dev.yaml`, `apps.yaml` wins and the report highlights the duplicate definition as a warning.
+
 ## Customization Options
 
 ### Common CLI Options
@@ -260,7 +262,7 @@ variables:
   MOBIUS_APPS_FILES: "apps.yaml,apps-dev.yaml"
 ```
 
-Precedence is first-wins. If `apps.yaml` and `apps-dev.yaml` define the same release name, the release from `apps.yaml` is used and the later duplicate is ignored.
+Precedence is first-wins. If `apps.yaml` and `apps-dev.yaml` define the same release name, the release from `apps.yaml` is used and the later duplicate is reported as a warning.
 
 ### Custom Layout
 

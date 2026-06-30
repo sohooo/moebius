@@ -8,7 +8,7 @@ Start here when setting up or reviewing `møbius`.
 
 | Mode | Repository shape | Start with |
 | --- | --- | --- |
-| GitOps cluster repository | `clusters/<cluster>/apps.yaml`, optional extra apps files, and `overrides/` values | [GitLab CI guide](gitlab-ci.md#gitops-cluster-repository) and [configuration](configuration.md) |
+| GitOps cluster repository | `clusters/<cluster>/apps.yaml`, optional `apps-dev.yaml`, and `overrides/` values | [GitLab CI guide](gitlab-ci.md#gitops-cluster-repository) and [configuration](configuration.md) |
 | Single Helm chart repository | root `Chart.yaml`, `templates/`, optional `values.yaml`, optional vendored subcharts | [GitLab CI guide](gitlab-ci.md#single-helm-chart-repository) and [CLI reference](cli.md) |
 | Local review | any supported repository with a resolvable base ref | [CLI reference](cli.md#examples) |
 

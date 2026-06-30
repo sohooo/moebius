@@ -20,7 +20,7 @@ func TestLoadRepoConfigUsesDefaultsWhenNoFileOrEnvIsPresent(t *testing.T) {
 	if cfg.Layout.ClustersDir != "clusters" {
 		t.Fatalf("expected default clusters_dir, got %q", cfg.Layout.ClustersDir)
 	}
-	if !slices.Equal(cfg.Layout.Apps.Files, []string{"apps.yaml"}) {
+	if !slices.Equal(cfg.Layout.Apps.Files, []string{"apps.yaml", "apps-dev.yaml"}) {
 		t.Fatalf("expected default apps files, got %v", cfg.Layout.Apps.Files)
 	}
 	if !cfg.Diff.Ignore.Defaults {
@@ -41,7 +41,7 @@ func TestLoadRepoConfigReadsOptionalConfigFile(t *testing.T) {
 	if cfg.Layout.ClustersDir != "custom-clusters" {
 		t.Fatalf("unexpected clusters_dir: %q", cfg.Layout.ClustersDir)
 	}
-	if !slices.Equal(cfg.Layout.Apps.Files, []string{"apps.yaml"}) {
+	if !slices.Equal(cfg.Layout.Apps.Files, []string{"apps.yaml", "apps-dev.yaml"}) {
 		t.Fatalf("expected default apps files, got %v", cfg.Layout.Apps.Files)
 	}
 }
@@ -494,6 +494,17 @@ func TestLoadReleasesMergesAppsFilesInPrecedenceOrder(t *testing.T) {
 	}
 	if releases[1].Name != "debug-app" {
 		t.Fatalf("expected additional release from secondary file, got %#v", releases[1])
+	}
+
+	_, warnings, err := LoadReleasesWithWarnings(root, layout, "kube-bravo")
+	if err != nil {
+		t.Fatalf("LoadReleasesWithWarnings returned error: %v", err)
+	}
+	if len(warnings) != 1 {
+		t.Fatalf("expected one duplicate warning, got %#v", warnings)
+	}
+	if warnings[0].ReleaseName != "hello-world" || !strings.Contains(warnings[0].Message, "apps-dev.yaml") {
+		t.Fatalf("unexpected duplicate warning: %#v", warnings[0])
 	}
 }
 

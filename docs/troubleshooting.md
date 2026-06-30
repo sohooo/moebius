@@ -200,7 +200,7 @@ mobius doctor --apps-files apps.yaml,apps-dev.yaml
 ```
 
 Fix:
-- configure all apps files in [configuration.md](configuration.md), `MOBIUS_APPS_FILES`, or `--apps-files`
+- verify the effective apps files include `apps.yaml,apps-dev.yaml` in [configuration.md](configuration.md), `MOBIUS_APPS_FILES`, or `--apps-files`
 - keep the list in precedence order, for example `apps.yaml,apps-dev.yaml`
 - remember that missing secondary files are skipped per cluster, but at least one configured apps file must exist for the cluster to be loadable
 

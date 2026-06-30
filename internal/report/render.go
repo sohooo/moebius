@@ -17,9 +17,13 @@ func renderCluster(root string, layout config.LayoutConfig, cluster, state, outp
 	if !anyAppsFileExists(root, layout, cluster) {
 		return nil
 	}
-	releases, err := config.LoadReleases(root, layout, cluster)
+	releases, releaseWarnings, err := config.LoadReleasesWithWarnings(root, layout, cluster)
 	if err != nil {
 		return err
+	}
+	warningsByRelease := map[string][]string{}
+	for _, warning := range releaseWarnings {
+		warningsByRelease[warning.ReleaseName] = append(warningsByRelease[warning.ReleaseName], warning.Message)
 	}
 	clusterDir := filepath.Join(outputRoot, cluster)
 	clusterDirCreated := false
@@ -82,6 +86,7 @@ func renderCluster(root string, layout config.LayoutConfig, cluster, state, outp
 			}
 			return fmt.Errorf("%s", message)
 		}
+		notices = append(warningsByRelease[release.Name], notices...)
 		if len(notices) > 0 {
 			lines := make([]string, 0, len(notices))
 			for _, notice := range notices {

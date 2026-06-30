@@ -81,12 +81,17 @@ type Release struct {
 	TargetRevision string
 }
 
+type ReleaseWarning struct {
+	ReleaseName string
+	Message     string
+}
+
 func Default() RepoConfig {
 	return RepoConfig{
 		Layout: LayoutConfig{
 			ClustersDir: "clusters",
 			Apps: AppsConfig{
-				Files: []string{"apps.yaml"},
+				Files: []string{"apps.yaml", "apps-dev.yaml"},
 				Kind:  "list",
 				Fields: AppsFieldsConfig{
 					Name:           "name",
@@ -255,9 +260,15 @@ func AppsPaths(root string, layout LayoutConfig, cluster string) []string {
 }
 
 func LoadReleases(root string, layout LayoutConfig, cluster string) ([]Release, error) {
+	releases, _, err := LoadReleasesWithWarnings(root, layout, cluster)
+	return releases, err
+}
+
+func LoadReleasesWithWarnings(root string, layout LayoutConfig, cluster string) ([]Release, []ReleaseWarning, error) {
 	paths := AppsPaths(root, layout, cluster)
 	releases := make([]Release, 0)
-	seenAcrossFiles := map[string]struct{}{}
+	warnings := make([]ReleaseWarning, 0)
+	seenAcrossFiles := map[string]string{}
 	found := false
 	fieldMap := layout.Apps.Fields.Map()
 	for _, path := range paths {
@@ -266,7 +277,7 @@ func LoadReleases(root string, layout LayoutConfig, cluster string) ([]Release, 
 			if os.IsNotExist(err) {
 				continue
 			}
-			return nil, err
+			return nil, nil, err
 		}
 		found = true
 		seenInFile := map[string]struct{}{}
@@ -282,27 +293,31 @@ func LoadReleases(root string, layout LayoutConfig, cluster string) ([]Release, 
 			}
 			if release.Name != "" {
 				if _, ok := seenInFile[release.Name]; ok {
-					return nil, fmt.Errorf("duplicate release name %q in %s", release.Name, path)
+					return nil, nil, fmt.Errorf("duplicate release name %q in %s", release.Name, path)
 				}
 				seenInFile[release.Name] = struct{}{}
-				if _, ok := seenAcrossFiles[release.Name]; ok {
+				if winnerPath, ok := seenAcrossFiles[release.Name]; ok {
+					warnings = append(warnings, ReleaseWarning{
+						ReleaseName: release.Name,
+						Message:     fmt.Sprintf("release %q is defined in both %s and %s; using the higher-priority definition from %s", release.Name, filepath.Base(winnerPath), filepath.Base(path), filepath.Base(winnerPath)),
+					})
 					continue
 				}
 			}
 			if err := validateRelease(path, layout.Apps.Required, release); err != nil {
-				return nil, err
+				return nil, nil, err
 			}
 			if _, ok := seenAcrossFiles[release.Name]; ok {
 				continue
 			}
-			seenAcrossFiles[release.Name] = struct{}{}
+			seenAcrossFiles[release.Name] = path
 			releases = append(releases, release)
 		}
 	}
 	if !found {
-		return nil, fmt.Errorf("none of the configured apps files exist for cluster %q: %s", cluster, AppsFilesSummary(layout))
+		return nil, nil, fmt.Errorf("none of the configured apps files exist for cluster %q: %s", cluster, AppsFilesSummary(layout))
 	}
-	return releases, nil
+	return releases, warnings, nil
 }
 
 func loadReleaseItems(path string) ([]map[string]any, error) {

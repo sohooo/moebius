@@ -9,6 +9,7 @@ layout:
     # Earlier files have precedence over later files.
     files:
       - apps.yaml
+      - apps-dev.yaml
 
     # møbius currently expects each file to be a top-level YAML list of objects.
     kind: list

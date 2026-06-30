@@ -264,6 +264,13 @@ data:
 	if _, err := os.Stat(filepath.Join(outputRoot, "kube-bravo", "ignored", "rendered.yaml")); err == nil {
 		t.Fatalf("duplicate release from secondary apps file should not render")
 	}
+	warning, err := os.ReadFile(filepath.Join(outputRoot, "kube-bravo", "prod-app", renderNoticeFilename))
+	if err != nil {
+		t.Fatalf("expected duplicate release warning: %v", err)
+	}
+	if !strings.Contains(string(warning), `release "prod-app" is defined in both apps.yaml and apps-dev.yaml`) {
+		t.Fatalf("unexpected duplicate warning:\n%s", string(warning))
+	}
 }
 
 func TestRenderClusterWarnSkipReleaseSkipsRenderFailure(t *testing.T) {
@@ -502,6 +509,51 @@ func TestBuildPrunesUnaffectedReleases(t *testing.T) {
 		if _, err := os.Stat(filepath.Join(outputDir, rel)); !os.IsNotExist(err) {
 			t.Fatalf("unexpected unaffected artifact %s, err=%v", rel, err)
 		}
+	}
+}
+
+func TestBuildDefaultAppsDevOverrideChangeIsReported(t *testing.T) {
+	root := t.TempDir()
+	repo, err := git.PlainInit(root, false)
+	if err != nil {
+		t.Fatalf("PlainInit: %v", err)
+	}
+	writeTinyChart(t, root)
+	writeReportTestFile(t, filepath.Join(root, "clusters/kube-bravo/apps-dev.yaml"), `- name: dev-app
+  namespace: demo
+  project: default
+  chart: charts/hello-world
+`)
+	writeReportTestFile(t, filepath.Join(root, "clusters/kube-bravo/overrides/default/dev-app.yaml"), "message: base\n")
+	mainHash := commitReportRepo(t, repo, "main")
+	setReportRepoMain(t, repo, mainHash)
+
+	writeReportTestFile(t, filepath.Join(root, "clusters/kube-bravo/overrides/default/dev-app.yaml"), "message: current\n")
+	_ = commitReportRepo(t, repo, "feature")
+
+	oldWD := chdirReportTest(t, root)
+	defer restoreReportTestWD(t, oldWD)
+
+	outputDir := filepath.Join(root, "artifacts")
+	reports, _, err := Build(cli.Options{
+		BaseRef:      "main",
+		OutputDir:    outputDir,
+		ContextLines: 1,
+	})
+	if err != nil {
+		t.Fatalf("Build returned error: %v", err)
+	}
+	if got, want := clusterNames(reports), "kube-bravo"; got != want {
+		t.Fatalf("unexpected cluster reports %q want %q", got, want)
+	}
+	if len(reports[0].Charts) != 1 || reports[0].Charts[0].Name != "dev-app" {
+		t.Fatalf("expected dev-app chart report, got %#v", reports[0].Charts)
+	}
+	if reports[0].Changed != 1 {
+		t.Fatalf("expected one changed resource, got %#v", reports[0])
+	}
+	if _, err := os.Stat(filepath.Join(outputDir, "current/kube-bravo/dev-app/rendered.yaml")); err != nil {
+		t.Fatalf("expected current dev-app artifact: %v", err)
 	}
 }
 
