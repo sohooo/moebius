@@ -81,6 +81,24 @@ func planAffectedReleaseDetails(root, baselineRoot string, layout config.LayoutC
 	affected := map[string]struct{}{}
 	clusterChangedPaths := pathsForCluster(layout, cluster, changedPaths)
 	overridePaths := map[string]struct{}{}
+	baselineCommonOverride, err := commonOverrideFingerprint(baselineRoot, layout, cluster)
+	if err != nil {
+		return affectedPlan{}, err
+	}
+	currentCommonOverride, err := commonOverrideFingerprint(root, layout, cluster)
+	if err != nil {
+		return affectedPlan{}, err
+	}
+	if baselineCommonOverride.Path != "" {
+		overridePaths[baselineCommonOverride.Path] = struct{}{}
+	}
+	if currentCommonOverride.Path != "" {
+		overridePaths[currentCommonOverride.Path] = struct{}{}
+	}
+	commonReason := ""
+	if baselineCommonOverride != currentCommonOverride {
+		commonReason = commonOverrideChangeReason(baselineCommonOverride, currentCommonOverride)
+	}
 
 	for name := range names {
 		baselineRelease, baselineOK := baselineReleases[name]
@@ -95,6 +113,10 @@ func planAffectedReleaseDetails(root, baselineRoot string, layout config.LayoutC
 		case !reflect.DeepEqual(baselineRelease, currentRelease):
 			affected[name] = struct{}{}
 			reasons[name] = append(reasons[name], "release_attributes_changed")
+		}
+		if commonReason != "" {
+			affected[name] = struct{}{}
+			reasons[name] = append(reasons[name], commonReason)
 		}
 
 		baselineOverride, err := overrideFingerprintForRelease(baselineRoot, layout, cluster, baselineRelease, baselineOK)
@@ -154,6 +176,17 @@ func overrideChangeReason(baseline, current overrideFingerprint) string {
 	}
 }
 
+func commonOverrideChangeReason(baseline, current overrideFingerprint) string {
+	switch {
+	case !baseline.Exists && current.Exists:
+		return "common_override_added"
+	case baseline.Exists && !current.Exists:
+		return "common_override_removed"
+	default:
+		return "common_override_changed"
+	}
+}
+
 func uniqueStrings(values []string) []string {
 	seen := map[string]struct{}{}
 	var out []string
@@ -194,6 +227,29 @@ func overrideFingerprintForRelease(root string, layout config.LayoutConfig, clus
 		return overrideFingerprint{}, nil
 	}
 	path := config.ResolveOverridePath(root, layout, cluster, release)
+	clusterDir := config.ClusterDir(root, layout, cluster)
+	rel, err := filepath.Rel(clusterDir, path)
+	if err != nil {
+		return overrideFingerprint{}, err
+	}
+	fp := overrideFingerprint{Path: filepath.ToSlash(rel)}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return fp, nil
+		}
+		return overrideFingerprint{}, err
+	}
+	fp.Exists = true
+	fp.Contents = string(data)
+	return fp, nil
+}
+
+func commonOverrideFingerprint(root string, layout config.LayoutConfig, cluster string) (overrideFingerprint, error) {
+	path := config.ResolveCommonOverridePath(root, layout, cluster)
+	if path == "" {
+		return overrideFingerprint{}, nil
+	}
 	clusterDir := config.ClusterDir(root, layout, cluster)
 	rel, err := filepath.Rel(clusterDir, path)
 	if err != nil {

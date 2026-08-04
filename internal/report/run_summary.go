@@ -31,10 +31,11 @@ type runSummary struct {
 }
 
 type runSummaryLayout struct {
-	ClustersDir  string   `json:"clusters_dir"`
-	AppsFiles    []string `json:"apps_files"`
-	OverridePath string   `json:"override_path"`
-	FallbackPath string   `json:"fallback_path,omitempty"`
+	ClustersDir        string   `json:"clusters_dir"`
+	AppsFiles          []string `json:"apps_files"`
+	CommonOverridePath string   `json:"common_override_path,omitempty"`
+	OverridePath       string   `json:"override_path"`
+	FallbackPath       string   `json:"fallback_path,omitempty"`
 }
 
 type runSummaryDiffIgnore struct {
@@ -90,10 +91,11 @@ func newRunSummary(opts cli.Options, cfg config.RepoConfig, meta config.LoadMeta
 		ChangedPathsCount: len(changedPaths),
 		SelectedClusters:  append([]string(nil), selectedClusters...),
 		Layout: runSummaryLayout{
-			ClustersDir:  layout.ClustersDir,
-			AppsFiles:    append([]string(nil), layout.Apps.Files...),
-			OverridePath: layout.Overrides.Path,
-			FallbackPath: layout.Overrides.FallbackPath,
+			ClustersDir:        layout.ClustersDir,
+			AppsFiles:          append([]string(nil), layout.Apps.Files...),
+			CommonOverridePath: layout.Overrides.CommonPath,
+			OverridePath:       layout.Overrides.Path,
+			FallbackPath:       layout.Overrides.FallbackPath,
 		},
 		DiffIgnore: runSummaryDiffIgnore{
 			Defaults:      cfg.Diff.Ignore.Defaults,
@@ -153,6 +155,9 @@ func writeRunSummaryMarkdown(outputDir string, summary *runSummary) error {
 	fmt.Fprintf(&b, "- Head: `%s`\n", summary.HeadSHA)
 	fmt.Fprintf(&b, "- Clusters dir: `%s`\n", summary.Layout.ClustersDir)
 	fmt.Fprintf(&b, "- Apps files: `%s`\n", strings.Join(summary.Layout.AppsFiles, ","))
+	if summary.Layout.CommonOverridePath != "" {
+		fmt.Fprintf(&b, "- Common override path: `%s`\n", summary.Layout.CommonOverridePath)
+	}
 	fmt.Fprintf(&b, "- Override path: `%s`\n", summary.Layout.OverridePath)
 	if summary.Layout.FallbackPath != "" {
 		fmt.Fprintf(&b, "- Fallback override path: `%s`\n", summary.Layout.FallbackPath)

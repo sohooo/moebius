@@ -245,6 +245,7 @@ data:
   project: default
   chart: charts/hello-world
 `)
+	writeReportTestFile(t, filepath.Join(clusterDir, "overrides", "common.yaml"), "message: common\n")
 	writeReportTestFile(t, filepath.Join(clusterDir, "overrides", "default", "dev-app.yaml"), "message: dev\n")
 
 	err := renderCluster(root, layout, "kube-bravo", "current", outputRoot, allReleasesSelection(), helmrender.New(cacheDir), cli.RenderErrorModeFail, cli.DuplicateKeyModeError)
@@ -253,6 +254,13 @@ data:
 	}
 	if _, err := os.Stat(filepath.Join(outputRoot, "kube-bravo", "prod-app", "rendered.yaml")); err != nil {
 		t.Fatalf("expected prod-app rendered output: %v", err)
+	}
+	prodRendered, err := os.ReadFile(filepath.Join(outputRoot, "kube-bravo", "prod-app", "rendered.yaml"))
+	if err != nil {
+		t.Fatalf("expected prod-app rendered output: %v", err)
+	}
+	if !strings.Contains(string(prodRendered), `message: "common"`) {
+		t.Fatalf("expected prod-app common override values, got:\n%s", string(prodRendered))
 	}
 	devRendered, err := os.ReadFile(filepath.Join(outputRoot, "kube-bravo", "dev-app", "rendered.yaml"))
 	if err != nil {
@@ -574,6 +582,76 @@ func TestBuildDefaultAppsDevOverrideChangeIsReported(t *testing.T) {
 	}
 	if len(runSummary.Layout.AppsFiles) < 2 || runSummary.Layout.AppsFiles[1] != "apps-dev.yaml" {
 		t.Fatalf("expected apps-dev.yaml in run summary, got %#v", runSummary.Layout.AppsFiles)
+	}
+}
+
+func TestBuildCommonOverrideChangeAffectsAllClusterReleases(t *testing.T) {
+	root := t.TempDir()
+	repo, err := git.PlainInit(root, false)
+	if err != nil {
+		t.Fatalf("PlainInit: %v", err)
+	}
+	writeReportTestFile(t, filepath.Join(root, "charts/cluster-aware/Chart.yaml"), "apiVersion: v2\nname: cluster-aware\nversion: 0.1.0\n")
+	writeReportTestFile(t, filepath.Join(root, "charts/cluster-aware/templates/configmap.yaml"), `apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ .Release.Name }}
+  namespace: {{ .Release.Namespace }}
+data:
+  owner: {{ .Values.cluster.owner | quote }}
+`)
+	writeReportTestFile(t, filepath.Join(root, "clusters/kube-bravo/apps.yaml"), `- name: outline
+  namespace: demo
+  project: default
+  chart: charts/cluster-aware
+`)
+	writeReportTestFile(t, filepath.Join(root, "clusters/kube-bravo/apps-dev.yaml"), `- name: keycloak
+  namespace: demo
+  project: default
+  chart: charts/cluster-aware
+`)
+	writeReportTestFile(t, filepath.Join(root, "clusters/kube-bravo/overrides/common.yaml"), "cluster:\n  owner: platform\n")
+	mainHash := commitReportRepo(t, repo, "main")
+	setReportRepoMain(t, repo, mainHash)
+
+	writeReportTestFile(t, filepath.Join(root, "clusters/kube-bravo/overrides/common.yaml"), "cluster:\n  owner: product\n")
+	_ = commitReportRepo(t, repo, "feature")
+
+	oldWD := chdirReportTest(t, root)
+	defer restoreReportTestWD(t, oldWD)
+
+	outputDir := filepath.Join(root, "artifacts")
+	reports, _, err := Build(cli.Options{
+		BaseRef:      "main",
+		OutputDir:    outputDir,
+		ContextLines: 1,
+	})
+	if err != nil {
+		t.Fatalf("Build returned error: %v", err)
+	}
+	if got, want := clusterNames(reports), "kube-bravo"; got != want {
+		t.Fatalf("unexpected cluster reports %q want %q", got, want)
+	}
+	if got, want := chartNames(reports[0].Charts), "keycloak,outline"; got != want {
+		t.Fatalf("unexpected chart reports %q want %q", got, want)
+	}
+	summaryText := readReportTestFile(t, filepath.Join(outputDir, runSummaryMarkdownFilename))
+	for _, needle := range []string{
+		"Common override path: `overrides/common.yaml`",
+		"| `outline` | `apps.yaml` | `selected` | `common_override_changed` | `rendered` | `produced_changes` |",
+		"| `keycloak` | `apps-dev.yaml` | `selected` | `common_override_changed` | `rendered` | `produced_changes` |",
+		"_No warnings or full-cluster fallbacks recorded._",
+	} {
+		if !strings.Contains(summaryText, needle) {
+			t.Fatalf("expected run summary to contain %q, got:\n%s", needle, summaryText)
+		}
+	}
+	var runSummary runSummary
+	if err := json.Unmarshal([]byte(readReportTestFile(t, filepath.Join(outputDir, runSummaryJSONFilename))), &runSummary); err != nil {
+		t.Fatalf("unmarshal run summary: %v", err)
+	}
+	if runSummary.Layout.CommonOverridePath != "overrides/common.yaml" {
+		t.Fatalf("expected common override path in JSON summary, got %#v", runSummary.Layout)
 	}
 }
 

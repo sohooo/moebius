@@ -31,6 +31,10 @@ layout:
       - chart
 
   overrides:
+    # Optional common values file path, relative to the cluster directory.
+    # When present, it is rendered before release-specific override files.
+    common_path: overrides/common.yaml
+
     # Primary override file path, relative to the cluster directory.
     # Available placeholders: {cluster}, {project}, {name}
     path: overrides/{project}/{name}.yaml

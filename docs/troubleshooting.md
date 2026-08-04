@@ -205,7 +205,7 @@ Fix:
 - keep the list in precedence order, for example `apps.yaml,apps-dev.yaml`
 - remember that missing secondary files are skipped per cluster, but at least one configured apps file must exist for the cluster to be loadable
 
-If a specific chart or release is missing from the report, open `.mobius-out/run-summary.md`. It lists considered releases, selected releases, skipped releases, and reasons such as `not_affected`, `override_changed`, or full-cluster fallback.
+If a specific chart or release is missing from the report, open `.mobius-out/run-summary.md`. It lists considered releases, selected releases, skipped releases, and reasons such as `not_affected`, `override_changed`, `common_override_changed`, or full-cluster fallback.
 
 ## Resource is unvalidated or schema coverage is missing
 

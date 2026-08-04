@@ -166,6 +166,7 @@ clusters/
     apps.yaml
     apps-dev.yaml              # optional per cluster, included in the default apps file list
     overrides/
+      common.yaml               # optional shared values, applied first
       default/
         hello-world.yaml
       hello-world.yaml         # fallback
@@ -210,13 +211,16 @@ For OCI charts, use an OCI chart reference and always set `targetRevision`:
 
 For every release, `møbius` looks for values overrides in this order:
 
-| Path | Meaning |
-| --- | --- |
-| `clusters/<cluster>/overrides/<project>/<name>.yaml` | Primary default path. |
-| `clusters/<cluster>/overrides/<name>.yaml` | Fallback default path. |
-| no file | Render with chart defaults. |
+| Order | Path | Meaning |
+| ---: | --- | --- |
+| 1 | `clusters/<cluster>/overrides/common.yaml` | Optional shared cluster values. |
+| 2 | `clusters/<cluster>/overrides/<project>/<name>.yaml` | Primary release-specific values. |
+| 3 | `clusters/<cluster>/overrides/<name>.yaml` | Fallback release-specific values, used when the primary file is absent. |
+| - | no file | Render with chart defaults. |
 
-Overrides are shared for all configured apps files. For example, a release defined in `apps-dev.yaml` still uses `overrides/<project>/<name>.yaml`.
+Values are merged in order. Release-specific values override `common.yaml`, which matches an ArgoCD `helm.valueFiles` list where `common.yaml` appears before the chart-specific values file.
+
+Overrides are shared for all configured apps files. For example, a release defined in `apps-dev.yaml` still uses `overrides/<project>/<name>.yaml`. Missing optional apps files are skipped, and an existing empty secondary apps file contributes no releases.
 
 If the same release name appears in both `apps.yaml` and `apps-dev.yaml`, `apps.yaml` wins and the report highlights the duplicate definition as a warning.
 
@@ -282,6 +286,7 @@ layout:
       chart: chart_ref
       targetRevision: chart_target_revision
   overrides:
+    common_path: values/common.yaml
     path: values/{project}/{name}.yaml
     fallback_path: values/{name}.yaml
 ```
@@ -304,6 +309,7 @@ variables:
           chart: chart_ref
           targetRevision: chart_target_revision
       overrides:
+        common_path: values/common.yaml
         path: values/{project}/{name}.yaml
         fallback_path: values/{name}.yaml
 ```

@@ -23,6 +23,9 @@ func TestLoadRepoConfigUsesDefaultsWhenNoFileOrEnvIsPresent(t *testing.T) {
 	if !slices.Equal(cfg.Layout.Apps.Files, []string{"apps.yaml", "apps-dev.yaml"}) {
 		t.Fatalf("expected default apps files, got %v", cfg.Layout.Apps.Files)
 	}
+	if cfg.Layout.Overrides.CommonPath != "overrides/common.yaml" {
+		t.Fatalf("expected default common override path, got %q", cfg.Layout.Overrides.CommonPath)
+	}
 	if !cfg.Diff.Ignore.Defaults {
 		t.Fatalf("expected default diff ignore rules to be enabled")
 	}
@@ -275,6 +278,40 @@ func TestLoadRepoConfigRejectsUnknownPlaceholder(t *testing.T) {
 	}
 }
 
+func TestLoadRepoConfigReadsCommonOverridePath(t *testing.T) {
+	root := t.TempDir()
+	writeFile(t, filepath.Join(root, "config.yaml"), "layout:\n  overrides:\n    common_path: values/common.yaml\n")
+	t.Setenv(EnvConfigYAML, "")
+	t.Setenv(EnvAppsFiles, "")
+
+	cfg, err := LoadRepoConfig(root)
+	if err != nil {
+		t.Fatalf("LoadRepoConfig returned error: %v", err)
+	}
+	if cfg.Layout.Overrides.CommonPath != "values/common.yaml" {
+		t.Fatalf("unexpected common override path %q", cfg.Layout.Overrides.CommonPath)
+	}
+}
+
+func TestLoadRepoConfigRejectsInvalidCommonOverridePath(t *testing.T) {
+	for _, path := range []string{"/values/common.yaml", "../values/common.yaml"} {
+		t.Run(path, func(t *testing.T) {
+			root := t.TempDir()
+			writeFile(t, filepath.Join(root, "config.yaml"), "layout:\n  overrides:\n    common_path: "+path+"\n")
+			t.Setenv(EnvConfigYAML, "")
+			t.Setenv(EnvAppsFiles, "")
+
+			_, err := LoadRepoConfig(root)
+			if err == nil {
+				t.Fatal("expected invalid common override path error")
+			}
+			if !strings.Contains(err.Error(), "layout.overrides.common_path") {
+				t.Fatalf("unexpected error: %v", err)
+			}
+		})
+	}
+}
+
 func TestLoadRepoConfigRejectsUnknownRequiredField(t *testing.T) {
 	root := t.TempDir()
 	writeFile(t, filepath.Join(root, "config.yaml"), "layout:\n  apps:\n    required:\n      - release_name\n")
@@ -446,6 +483,62 @@ func TestResolveOverridePathHonorsCustomPatterns(t *testing.T) {
 	}
 }
 
+func TestResolveOverrideValueFilesIncludesCommonThenSpecific(t *testing.T) {
+	root := t.TempDir()
+	layout := Default().Layout
+	cluster := "kube-bravo"
+	release := Release{Name: "hello-world", Project: "test"}
+	clusterDir := ClusterDir(root, layout, cluster)
+
+	common := filepath.Join(clusterDir, "overrides", "common.yaml")
+	primary := filepath.Join(clusterDir, "overrides", "test", "hello-world.yaml")
+	writeFile(t, common, "cluster:\n  name: kube-bravo\n")
+	writeFile(t, primary, "replicaCount: 3\n")
+
+	got := ResolveOverrideValueFiles(root, layout, cluster, release)
+	if !slices.Equal(got, []string{common, primary}) {
+		t.Fatalf("unexpected values files: got %v want %v", got, []string{common, primary})
+	}
+}
+
+func TestResolveOverrideValueFilesIncludesCommonThenFallback(t *testing.T) {
+	root := t.TempDir()
+	layout := Default().Layout
+	cluster := "kube-bravo"
+	release := Release{Name: "hello-world", Project: "test"}
+	clusterDir := ClusterDir(root, layout, cluster)
+
+	common := filepath.Join(clusterDir, "overrides", "common.yaml")
+	fallback := filepath.Join(clusterDir, "overrides", "hello-world.yaml")
+	writeFile(t, common, "cluster:\n  name: kube-bravo\n")
+	writeFile(t, fallback, "replicaCount: 2\n")
+
+	got := ResolveOverrideValueFiles(root, layout, cluster, release)
+	if !slices.Equal(got, []string{common, fallback}) {
+		t.Fatalf("unexpected values files: got %v want %v", got, []string{common, fallback})
+	}
+}
+
+func TestResolveOverrideValueFilesAllowsOnlyCommonOrNone(t *testing.T) {
+	root := t.TempDir()
+	layout := Default().Layout
+	cluster := "kube-bravo"
+	release := Release{Name: "hello-world", Project: "test"}
+	clusterDir := ClusterDir(root, layout, cluster)
+
+	common := filepath.Join(clusterDir, "overrides", "common.yaml")
+	writeFile(t, common, "cluster:\n  name: kube-bravo\n")
+	if got := ResolveOverrideValueFiles(root, layout, cluster, release); !slices.Equal(got, []string{common}) {
+		t.Fatalf("unexpected common-only values files: %v", got)
+	}
+	if err := os.Remove(common); err != nil {
+		t.Fatalf("Remove: %v", err)
+	}
+	if got := ResolveOverrideValueFiles(root, layout, cluster, release); len(got) != 0 {
+		t.Fatalf("expected no values files, got %v", got)
+	}
+}
+
 func TestParseAppsFilesValidatesList(t *testing.T) {
 	files, err := ParseAppsFiles("apps.yaml, apps-dev.yaml")
 	if err != nil {
@@ -505,6 +598,43 @@ func TestLoadReleasesMergesAppsFilesInPrecedenceOrder(t *testing.T) {
 	}
 	if warnings[0].ReleaseName != "hello-world" || !strings.Contains(warnings[0].Message, "apps-dev.yaml") {
 		t.Fatalf("unexpected duplicate warning: %#v", warnings[0])
+	}
+}
+
+func TestLoadReleasesSkipsEmptySecondaryAppsFile(t *testing.T) {
+	root := t.TempDir()
+	layout := Default().Layout
+	layout.Apps.Files = []string{"apps.yaml", "apps-dev.yaml"}
+	clusterDir := ClusterDir(root, layout, "kube-bravo")
+	writeFile(t, filepath.Join(clusterDir, "apps.yaml"), `- name: hello-world
+  namespace: prod
+  project: default
+  chart: charts/hello-world
+`)
+	writeFile(t, filepath.Join(clusterDir, "apps-dev.yaml"), "")
+
+	releases, err := LoadReleases(root, layout, "kube-bravo")
+	if err != nil {
+		t.Fatalf("LoadReleases returned error: %v", err)
+	}
+	if len(releases) != 1 || releases[0].Name != "hello-world" {
+		t.Fatalf("expected release from apps.yaml only, got %#v", releases)
+	}
+}
+
+func TestLoadReleasesErrorsWhenExistingAppsFilesContainNoReleases(t *testing.T) {
+	root := t.TempDir()
+	layout := Default().Layout
+	layout.Apps.Files = []string{"apps.yaml", "apps-dev.yaml"}
+	clusterDir := ClusterDir(root, layout, "kube-bravo")
+	writeFile(t, filepath.Join(clusterDir, "apps-dev.yaml"), "")
+
+	_, err := LoadReleases(root, layout, "kube-bravo")
+	if err == nil {
+		t.Fatal("expected empty configured apps files error")
+	}
+	if !strings.Contains(err.Error(), `configured apps files for cluster "kube-bravo" contain no releases`) {
+		t.Fatalf("unexpected error: %v", err)
 	}
 }
 

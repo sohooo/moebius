@@ -53,6 +53,7 @@ type AppsFieldsConfig struct {
 }
 
 type OverridesConfig struct {
+	CommonPath   string `yaml:"common_path"`
 	Path         string `yaml:"path"`
 	FallbackPath string `yaml:"fallback_path"`
 }
@@ -111,6 +112,7 @@ func Default() RepoConfig {
 				Required: []string{"name", "namespace", "chart"},
 			},
 			Overrides: OverridesConfig{
+				CommonPath:   "overrides/common.yaml",
 				Path:         "overrides/{project}/{name}.yaml",
 				FallbackPath: "overrides/{name}.yaml",
 			},
@@ -228,6 +230,14 @@ func (c *RepoConfig) Validate() error {
 		}
 	}
 
+	if c.Layout.Overrides.CommonPath != "" {
+		if err := validatePattern(c.Layout.Overrides.CommonPath, "layout.overrides.common_path"); err != nil {
+			return err
+		}
+		if err := validatePatternStaysWithinCluster(c.Layout.Overrides.CommonPath, "layout.overrides.common_path"); err != nil {
+			return err
+		}
+	}
 	if err := validatePattern(c.Layout.Overrides.Path, "layout.overrides.path"); err != nil {
 		return err
 	}
@@ -341,6 +351,9 @@ func LoadReleaseMetadataWithWarnings(root string, layout LayoutConfig, cluster s
 	if !found {
 		return nil, nil, fmt.Errorf("none of the configured apps files exist for cluster %q: %s", cluster, AppsFilesSummary(layout))
 	}
+	if len(releases) == 0 {
+		return nil, nil, fmt.Errorf("configured apps files for cluster %q contain no releases: %s", cluster, AppsFilesSummary(layout))
+	}
 	return releases, warnings, nil
 }
 
@@ -353,9 +366,6 @@ func loadReleaseItems(path string) ([]map[string]any, error) {
 	var raw []map[string]any
 	if err := yaml.Unmarshal(data, &raw); err != nil {
 		return nil, fmt.Errorf("parse %s: %w", path, err)
-	}
-	if len(raw) == 0 {
-		return nil, fmt.Errorf("%s must contain at least one release", path)
 	}
 	return raw, nil
 }
@@ -395,6 +405,25 @@ func ResolveOverridePath(root string, layout LayoutConfig, cluster string, relea
 		return primary
 	}
 	return filepath.Join(ClusterDir(root, layout, cluster), renderPattern(layout.Overrides.FallbackPath, cluster, release))
+}
+
+func ResolveCommonOverridePath(root string, layout LayoutConfig, cluster string) string {
+	if layout.Overrides.CommonPath == "" {
+		return ""
+	}
+	return filepath.Join(ClusterDir(root, layout, cluster), renderPattern(layout.Overrides.CommonPath, cluster, Release{}))
+}
+
+func ResolveOverrideValueFiles(root string, layout LayoutConfig, cluster string, release Release) []string {
+	var valuesFiles []string
+	if common := ResolveCommonOverridePath(root, layout, cluster); common != "" && fileExists(common) {
+		valuesFiles = append(valuesFiles, common)
+	}
+	specific := ResolveOverridePath(root, layout, cluster, release)
+	if fileExists(specific) {
+		valuesFiles = append(valuesFiles, specific)
+	}
+	return valuesFiles
 }
 
 func (f AppsFieldsConfig) Map() map[string]string {
@@ -441,6 +470,14 @@ func validatePattern(pattern, field string) error {
 		default:
 			return fmt.Errorf("%s contains unknown placeholder %q", field, match[1])
 		}
+	}
+	return nil
+}
+
+func validatePatternStaysWithinCluster(pattern, field string) error {
+	clean := filepath.ToSlash(filepath.Clean(pattern))
+	if clean == "." || strings.HasPrefix(clean, "../") || clean == ".." {
+		return fmt.Errorf("%s must stay within the cluster directory", field)
 	}
 	return nil
 }

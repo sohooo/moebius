@@ -17,6 +17,7 @@ By default, cluster definitions live under `clusters/`.
 Expected structure:
 - `clusters/<cluster>/apps.yaml`
 - `clusters/<cluster>/apps-dev.yaml` when a cluster has additional development/test releases
+- `clusters/<cluster>/overrides/common.yaml`
 - `clusters/<cluster>/overrides/<project>/<name>.yaml`
 - `clusters/<cluster>/overrides/<name>.yaml`
 
@@ -45,12 +46,12 @@ It can define:
 - apps file names, in precedence order
 - field remapping for release entries
 - required canonical fields
-- primary and fallback override path patterns
+- common, primary, and fallback override path patterns
 - semantic diff ignore rules for non-actionable metadata churn
 
 Each apps file must remain a top-level YAML list of release objects. `møbius` does not support nested release extraction, arbitrary YAML queries, or custom templating rules.
 
-By default, `møbius` reads `apps.yaml` and `apps-dev.yaml` in that order. Missing files are skipped per cluster. Earlier files have precedence: if the same release name appears in both files, the release from `apps.yaml` is used and the report highlights the duplicate definition as a warning.
+By default, `møbius` reads `apps.yaml` and `apps-dev.yaml` in that order. Missing files are skipped per cluster, and an existing empty secondary file simply contributes no releases. Earlier files have precedence: if the same release name appears in both files, the release from `apps.yaml` is used and the report highlights the duplicate definition as a warning.
 
 Example:
 
@@ -69,6 +70,7 @@ layout:
       chart: chart
       targetRevision: targetRevision
   overrides:
+    common_path: overrides/common.yaml
     path: overrides/{project}/{name}.yaml
     fallback_path: overrides/{name}.yaml
 diff:
@@ -96,9 +98,22 @@ layout:
       chart: chart_ref
       targetRevision: chart_target_revision
   overrides:
+    common_path: values/common.yaml
     path: values/{project}/{name}.yaml
     fallback_path: values/{name}.yaml
 ```
+
+## Override Values Order
+
+In cluster repository mode, `møbius` renders each release with values files in this order:
+
+| Order | Default path | Purpose |
+| ---: | --- | --- |
+| 1 | `clusters/<cluster>/overrides/common.yaml` | Optional cluster-wide values shared by multiple releases. |
+| 2 | `clusters/<cluster>/overrides/<project>/<name>.yaml` | Primary release-specific values. |
+| 3 | `clusters/<cluster>/overrides/<name>.yaml` | Fallback release-specific values, used only when the primary file is absent. |
+
+Helm merges values in listed order, so release-specific values override `common.yaml`. Missing `common.yaml` is normal and does not produce a warning.
 
 ## Field Remapping
 

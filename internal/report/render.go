@@ -38,12 +38,9 @@ func renderCluster(root string, layout config.LayoutConfig, cluster, state, outp
 			}
 			clusterDirCreated = true
 		}
-		overridePath := config.ResolveOverridePath(root, layout, cluster, release)
-		if !fileExists(overridePath) {
-			overridePath = ""
-		}
+		valuesFiles := config.ResolveOverrideValueFiles(root, layout, cluster, release)
 		chartRef := release.ChartReference()
-		rendered, err := renderer.Render(root, chartRef, release.RepoURL, release.TargetRevision, release.Name, release.Namespace, overridePath)
+		rendered, err := renderer.RenderWithValuesFiles(root, chartRef, release.RepoURL, release.TargetRevision, release.Name, release.Namespace, valuesFiles)
 		if err != nil {
 			warning := renderFailureWarning(cluster, release, chartRef, state, err)
 			if writeErr := writeArtifactMessage(filepath.Join(filepath.Dir(outputRoot), "warnings"), state, cluster, release.Name, []string{warning}); writeErr != nil {
