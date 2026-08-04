@@ -84,6 +84,9 @@ func (r *Renderer) RenderWithValuesFiles(root string, chartRef string, repoURL s
 		}
 		values = chartutil.MergeTables(fileValues, values)
 	}
+	if err := chartutil.ProcessDependencies(ch, values); err != nil {
+		return "", err
+	}
 
 	options := chartutil.ReleaseOptions{
 		Name:      releaseName,
@@ -149,10 +152,6 @@ func (r *Renderer) loadChart(root string, chartRef string, repoURL string, targe
 }
 
 func renderChart(ch *chart.Chart, values chartutil.Values) (string, error) {
-	if err := chartutil.ProcessDependencies(ch, values); err != nil {
-		return "", err
-	}
-
 	renderedFiles, err := engine.Render(ch, values)
 	if err != nil {
 		return "", err

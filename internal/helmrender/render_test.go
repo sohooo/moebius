@@ -205,6 +205,60 @@ data:
 	}
 }
 
+func TestRenderLocalChartHonorsDependencyConditionFromOverrideValues(t *testing.T) {
+	root := t.TempDir()
+	writeChart(t, filepath.Join(root, "charts/app"), map[string]string{
+		"templates/configmap.yaml": `apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ .Release.Name }}
+data:
+  enabled: {{ .Values.database.backups.enabled | quote }}
+`,
+	}, `database:
+  backups:
+    enabled: true
+`)
+	writeFile(t, filepath.Join(root, "charts/app/Chart.yaml"), `apiVersion: v2
+name: app
+version: 0.1.0
+dependencies:
+  - name: backup
+    version: 0.1.0
+    repository: file://charts/backup
+    condition: database.backups.enabled
+`)
+	writeChart(t, filepath.Join(root, "charts/app/charts/backup"), map[string]string{
+		"templates/object-store.yaml": `apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: backup
+data:
+  endpointURL: {{ required ".defaultStore.endpointURL must be set" .Values.defaultStore.endpointURL | quote }}
+`,
+	}, "")
+	writeFile(t, filepath.Join(root, "charts/app/charts/backup/Chart.yaml"), `apiVersion: v2
+name: backup
+version: 0.1.0
+`)
+	override := filepath.Join(root, "clusters/kube/overrides/app.yaml")
+	writeFile(t, override, `database:
+  backups:
+    enabled: false
+`)
+
+	rendered, err := New(filepath.Join(root, ".cache")).Render(root, "charts/app", "", "", "hello", "demo", override)
+	if err != nil {
+		t.Fatalf("Render returned error: %v", err)
+	}
+	if strings.Contains(rendered, "name: backup") || strings.Contains(rendered, "endpointURL") {
+		t.Fatalf("expected disabled dependency to be omitted:\n%s", rendered)
+	}
+	if !strings.Contains(rendered, `enabled: "false"`) {
+		t.Fatalf("expected override value in parent render:\n%s", rendered)
+	}
+}
+
 func TestRenderLocalChartReturnsTemplateError(t *testing.T) {
 	root := t.TempDir()
 	writeChart(t, filepath.Join(root, "charts/app"), map[string]string{
