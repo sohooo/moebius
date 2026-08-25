@@ -32,7 +32,9 @@ func writeArtifactIndex(outputDir string, reports []output.ClusterReport) error 
 	var b strings.Builder
 	fmt.Fprintln(&b, "# møbius Artifacts")
 	fmt.Fprintln(&b)
+	fmt.Fprintf(&b, "**Start here:** open [`%s`](%s) after extracting the artifact archive. It is a self-contained, searchable report with all semantic and raw diffs embedded.\n\n", artifactHTMLFilename, artifactHTMLFilename)
 	fmt.Fprintln(&b, "Artifact layout:")
+	fmt.Fprintf(&b, "- `%s`: full offline HTML report and primary review entry point\n", artifactHTMLFilename)
 	fmt.Fprintln(&b, "- `current/`: current rendered manifests and split resources")
 	fmt.Fprintln(&b, "- `baseline/`: merge-base rendered manifests and split resources")
 	fmt.Fprintln(&b, "- `diff/`: raw and semantic per-resource diffs")
@@ -89,6 +91,7 @@ func listArtifactFiles(dir string) []string {
 }
 
 type artifactSummary struct {
+	HTMLReport     string                 `json:"html_report"`
 	Clusters       int                    `json:"clusters"`
 	Charts         int                    `json:"charts"`
 	Added          int                    `json:"added"`
@@ -112,6 +115,7 @@ func writeArtifactSummary(outputDir string, reports []output.ClusterReport) erro
 		return nil
 	}
 	summary := artifactSummary{
+		HTMLReport:     artifactHTMLFilename,
 		ErrorArtifacts: listArtifactFiles(filepath.Join(outputDir, "errors")),
 		Warnings:       listArtifactFiles(filepath.Join(outputDir, "warnings")),
 	}

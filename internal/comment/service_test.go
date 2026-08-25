@@ -125,6 +125,12 @@ func TestServicePost_FallsBackToSummaryArtifactsWhenCommentTooLarge(t *testing.T
 	if !strings.Contains(client.createdBody, "Compact summary mode") {
 		t.Fatalf("expected compact summary footer in body:\n%s", client.createdBody)
 	}
+	if !strings.Contains(client.createdBody, "open `.mobius-out/report.html`") {
+		t.Fatalf("expected compact report to point reviewers to the HTML artifact:\n%s", client.createdBody)
+	}
+	if strings.Count(client.createdBody, ".mobius-out/report.html") != 1 {
+		t.Fatalf("expected exactly one prominent HTML artifact hint:\n%s", client.createdBody)
+	}
 }
 
 func TestServicePost_FallsBackToSummaryArtifactsForDescriptionWhenBodyTooLarge(t *testing.T) {
@@ -157,6 +163,14 @@ func TestServicePost_FallsBackToSummaryArtifactsForDescriptionWhenBodyTooLarge(t
 	}
 	if !strings.Contains(client.updatedDescription, "Compact summary mode") {
 		t.Fatalf("expected compact summary footer in description:\n%s", client.updatedDescription)
+	}
+	if strings.Count(client.updatedDescription, ".mobius-out/report.html") != 1 {
+		t.Fatalf("expected exactly one HTML artifact hint in the truncated description:\n%s", client.updatedDescription)
+	}
+	hintIndex := strings.Index(client.updatedDescription, ".mobius-out/report.html")
+	detailsIndex := strings.Index(client.updatedDescription, "<details>")
+	if hintIndex < 0 || detailsIndex < 0 || hintIndex > detailsIndex {
+		t.Fatalf("expected the HTML artifact hint before collapsed chart details:\n%s", client.updatedDescription)
 	}
 }
 

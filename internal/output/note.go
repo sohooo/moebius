@@ -35,6 +35,9 @@ func renderReportBodyWithOptions(reports []ClusterReport, mode diff.Mode, meta N
 	if opts.Status != "" {
 		fmt.Fprintf(&b, "**Status:** %s\n\n", opts.Status)
 	}
+	if opts.Mode == cli.CommentModeSummaryArtifacts || opts.IncludeArtifactsHint {
+		renderArtifactsHint(&b)
+	}
 
 	if len(reports) == 0 {
 		b.WriteString("_No effective changes._\n\n")
@@ -116,10 +119,6 @@ func renderClusterComment(report ClusterReport, mode diff.Mode, opts NoteRenderO
 				fmt.Fprintf(&b, "- %s\n", change)
 			}
 		}
-		if opts.Mode == cli.CommentModeSummaryArtifacts || opts.IncludeArtifactsHint {
-			fmt.Fprintln(&b, "> [!note]")
-			fmt.Fprintln(&b, "> Full detailed report is available in pipeline artifacts.")
-		}
 		fmt.Fprintln(&b)
 		if opts.Mode == cli.CommentModeSummary || opts.Mode == cli.CommentModeSummaryArtifacts {
 			fmt.Fprintln(&b, "</details>")
@@ -166,6 +165,12 @@ func renderClusterComment(report ClusterReport, mode diff.Mode, opts NoteRenderO
 		fmt.Fprintln(&b)
 	}
 	return strings.TrimRight(b.String(), "\n"), nil
+}
+
+func renderArtifactsHint(b *strings.Builder) {
+	fmt.Fprintln(b, "> [!note]")
+	fmt.Fprintln(b, "> This report was truncated. For the complete searchable report and embedded diffs, download and extract the pipeline artifacts, then open `.mobius-out/report.html`.")
+	fmt.Fprintln(b)
 }
 
 func renderClusterDetails(b *strings.Builder, reports []ClusterReport, mode diff.Mode, opts NoteRenderOptions) error {

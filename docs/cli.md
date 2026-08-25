@@ -27,7 +27,7 @@ This page summarizes the commands and flags most users need. Run `mobius --help`
 | `--namespace <name>` | `diff`, `comment` | Chart mode Helm release namespace. Defaults to `default`. |
 | `--clusters-dir <path>` | `clusters`, `doctor`, `diff`, `comment` | Override the cluster root directory from configuration. |
 | `--apps-files <list>` | `clusters`, `doctor`, `diff`, `comment` | Comma-separated apps files in precedence order, for example `apps.yaml,apps-dev.yaml`. |
-| `--output-dir <path>` | `diff`, `comment` | Persist rendered manifests, split resources, diffs, warnings, errors, and summary artifacts. |
+| `--output-dir <path>` | `diff`, `comment` | Persist a self-contained HTML report plus rendered manifests, split resources, diffs, warnings, errors, and machine-readable summaries. |
 | `--context-lines <n>` | `diff`, `comment` | Number of unified diff context lines. |
 | `--diff-mode raw|semantic|both` | `diff`, `comment` | Select raw manifest diff, semantic field diff, or both. |
 | `--output-format plain|markdown` | `diff` | Select terminal-oriented plain output or standalone markdown output. |

@@ -90,7 +90,8 @@ Use these artifacts first:
 
 | Artifact | Use |
 | --- | --- |
-| `.mobius-out/index.md` | Human-readable summary and links to generated artifacts. |
+| `.mobius-out/report.html` | Start here after extracting the archive. Search and filter the complete report, then expand resources for embedded semantic and raw diffs. |
+| `.mobius-out/index.md` | Compact summary and links to generated artifacts. |
 | `.mobius-out/summary.json` | Machine-readable counts and artifact names. |
 | `.mobius-out/run-summary.md` | Effective options, apps files, selected releases, skipped releases, and reasons. |
 | `.mobius-out/run-summary.json` | Machine-readable run summary for diagnostics. |
@@ -98,3 +99,5 @@ Use these artifacts first:
 | `.mobius-out/diff/` | Per-resource raw and semantic diffs. |
 | `.mobius-out/errors/` | Render or split failures. |
 | `.mobius-out/warnings/` | Non-fatal render, YAML, or chart warnings. |
+
+`report.html` is self-contained: its styles, filtering logic, findings, validation results, and diff contents are all embedded. It can be opened directly from the extracted artifact directory without running a local web server.

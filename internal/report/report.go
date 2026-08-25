@@ -107,6 +107,9 @@ func Build(opts cli.Options) ([]output.ClusterReport, string, error) {
 	var reports []output.ClusterReport
 	defer func() {
 		_ = writeRunSummaryArtifacts(outputDir, summary)
+		if !cleanupOutput {
+			_ = writeArtifactHTML(outputDir, reports, summary)
+		}
 		_ = writeArtifactIndex(outputDir, reports)
 		_ = writeArtifactSummary(outputDir, reports)
 	}()

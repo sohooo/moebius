@@ -6,6 +6,7 @@ This page focuses on concrete symptom → cause → fix guidance for `møbius`.
 
 Start with artifacts when available:
 - `.mobius-out/comment-preflight.json`
+- `.mobius-out/report.html`
 - `.mobius-out/index.md`
 - `.mobius-out/summary.json`
 - `.mobius-out/run-summary.md`
@@ -261,7 +262,8 @@ What it means:
 
 How to verify:
 - inspect `.mobius-out/summary.json`
-- open `.mobius-out/index.md` and per-resource artifacts for the full detail
+- extract the artifacts and open `.mobius-out/report.html` for the complete searchable report and embedded diffs
+- use `.mobius-out/index.md` and the individual files only when diagnosing the artifact layout itself
 
 Fix:
 - keep `.mobius-out/` as a job artifact
