@@ -1,0 +1,67 @@
+name: security
+on:
+  schedule:
+    - cron: '23 5 * * *'
+    - cron: '35 6 * * 1'
+  workflow_dispatch:
+permissions:
+  contents: read
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+jobs:
+  published-image:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        arch: [amd64, arm64]
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: ./.github/actions/security-tools
+      - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
+      - name: Resolve supported release to immutable digest
+        env:
+          GH_TOKEN: ${{ github.token }}
+          IMAGE: ghcr.io/sohooo/moebius
+        run: |
+          set -euo pipefail
+          tag=$(gh api "repos/${GITHUB_REPOSITORY}/releases/latest" --jq .tag_name)
+          digest=$(docker buildx imagetools inspect "${IMAGE}:${tag}" --format '{{.Manifest.Digest}}')
+          echo "IMAGE_REF=${IMAGE}@${digest}" >> "$GITHUB_ENV"
+          mkdir -p reports
+          printf '%s\n' "${IMAGE}:${tag}" "${IMAGE}@${digest}" > reports/scanned-image.txt
+      - name: Scan published architecture
+        env:
+          ARCH: ${{ matrix.arch }}
+        run: |
+          set -euo pipefail
+          bash scripts/security/scan.sh image "$IMAGE_REF" reports/image "linux/$ARCH"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        if: always()
+        with:
+          name: published-image-${{ matrix.arch }}
+          path: reports/
+  source:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
+        with:
+          go-version-file: go.mod
+      - run: make vulncheck
+  refreshed-image:
+    if: github.event_name == 'workflow_dispatch' || github.event.schedule == '35 6 * * 1'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: ./.github/actions/security-tools
+      - name: Rebuild current source with fresh OS packages
+        run: |
+          docker build --pull --no-cache -t mobius:weekly .
+          bash scripts/security/smoke.sh mobius:weekly
+          bash scripts/security/scan.sh image mobius:weekly reports/refreshed
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        if: always()
+        with:
+          name: refreshed-image
+          path: reports/

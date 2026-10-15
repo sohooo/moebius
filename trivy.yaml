@@ -1,0 +1,4 @@
+# Report unfixed issues too. No blanket ignores or severity suppression.
+scan:
+  scanners:
+    - vuln

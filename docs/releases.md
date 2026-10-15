@@ -66,3 +66,35 @@ The tag-driven release workflow should produce:
 - GHCR image for the same tag
 
 If the tag exists but the Release page or GHCR image is missing, see [troubleshooting.md](troubleshooting.md).
+
+## Security and provenance
+
+Run `make vulncheck` before tagging. Release jobs scan every binary and both image
+architectures. Assets include CycloneDX SBOMs and signed checksums; containers
+include BuildKit SBOM/provenance attestations and keyless signatures.
+
+Verify an image by digest (replace VERSION and DIGEST):
+
+```bash
+cosign verify \
+  --certificate-identity 'https://github.com/sohooo/moebius/.github/workflows/release.yml@refs/tags/VERSION' \
+  --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+  ghcr.io/sohooo/moebius@sha256:DIGEST
+```
+
+Verify downloaded assets:
+
+```bash
+cosign verify-blob --bundle checksums.sigstore.json \
+  --certificate-identity 'https://github.com/sohooo/moebius/.github/workflows/release.yml@refs/tags/VERSION' \
+  --certificate-oidc-issuer https://token.actions.githubusercontent.com checksums.txt
+sha256sum --check checksums.txt
+```
+
+Enable the Renovate GitHub App for this repository to activate `renovate.json`.
+Require the `ci / verify` check in branch protection and enable Actions failure
+notifications for `security`. These settings are separate from committed files.
+
+Weekly update PRs use a seven-day cooldown and require review. Merge and release
+approved fixes promptly: scanning does not patch published artifacts. See
+[the security policy](../SECURITY.md) for supported versions and emergency fixes.

@@ -75,3 +75,7 @@ help:
 		'schema-verify Verify the embedded schema bundle is up to date' \
 		'verify  Format, test, and build' \
 		'clean   Remove the built binary'
+
+.PHONY: vulncheck
+vulncheck:
+	@. scripts/security/versions.env; $(GO) run golang.org/x/vuln/cmd/govulncheck@$$GOVULNCHECK_VERSION ./...

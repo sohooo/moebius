@@ -1,0 +1,14 @@
+name: Security tools
+description: Install the reviewed scanner version used by CI and release jobs
+runs:
+  using: composite
+  steps:
+    - id: versions
+      shell: bash
+      run: |
+        source scripts/security/versions.env
+        echo "trivy=v${TRIVY_VERSION}" >> "$GITHUB_OUTPUT"
+    - uses: aquasecurity/setup-trivy@3fb12ec12f41e471780db15c232d5dd185dcb514 # v0.2.6
+      with:
+        version: ${{ steps.versions.outputs.trivy }}
+        cache: true

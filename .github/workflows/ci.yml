@@ -1,51 +1,30 @@
 name: ci
-
 on:
   pull_request:
   push:
-    branches:
-      - master
-
+    branches: [master]
 permissions:
   contents: read
-
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
-
 jobs:
   verify:
     runs-on: ubuntu-latest
     steps:
-      - name: Check out repository
-        uses: actions/checkout@v4
-
-      - name: Set up Go
-        uses: actions/setup-go@v5
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
         with:
           go-version-file: go.mod
-          cache: true
-
-      - name: Check formatting
-        run: make fmt-check
-
-      - name: Verify schema bundle
-        run: make schema-verify
-
-      - name: Run tests
-        run: make test
-
-      - name: Build binary
-        run: make build
-
-      - name: Smoke test container image
+      - run: make schema-verify verify
+      - uses: ./.github/actions/security-tools
+      - run: make vulncheck
+      - name: Build and test image
         run: |
-          set -euo pipefail
-          BUILD_DATE="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-          docker build \
-            --build-arg MOBIUS_VERSION=ci \
-            --build-arg MOBIUS_COMMIT=${{ github.sha }} \
-            --build-arg MOBIUS_BUILD_DATE="${BUILD_DATE}" \
-            -t mobius:test .
-          docker run --rm mobius:test version
-          docker run --rm mobius:test diff --help >/dev/null
-          docker run --rm --entrypoint sh mobius:test -ec 'command -v git && command -v mobius && command -v møbius'
+          docker build --pull -t mobius:test .
+          bash scripts/security/smoke.sh mobius:test
+      - run: bash scripts/security/scan.sh image mobius:test reports/image
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        if: always()
+        with:
+          name: security-reports
+          path: reports/
