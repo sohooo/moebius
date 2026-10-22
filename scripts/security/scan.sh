@@ -11,4 +11,8 @@ trivy "$kind" "${extra[@]}" --scanners vuln --format json --output "$prefix.json
 trivy convert --format sarif --output "$prefix.sarif" "$prefix.json"
 # An empty/unsupported scan must never pass the release gate.
 jq -e 'any(.Results[]?; .Type == "gobinary")' "$prefix.json" >/dev/null
-trivy convert --format table --severity HIGH,CRITICAL --exit-code 1 "$prefix.json"
+# Scheduled monitoring reports findings; only its notification job deduplicates them.
+# CI and releases keep the default strict exit code.
+exit_code=1
+if [[ ${SECURITY_MONITOR_ONLY:-false} == true ]]; then exit_code=0; fi
+trivy convert --format table --severity HIGH,CRITICAL --exit-code "$exit_code" "$prefix.json"

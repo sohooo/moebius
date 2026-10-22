@@ -93,7 +93,10 @@ sha256sum --check checksums.txt
 
 Enable the Renovate GitHub App for this repository to activate `renovate.json`.
 Require the `ci / verify` check in branch protection and enable Actions failure
-notifications for `security`. These settings are separate from committed files.
+notifications for `security`. Scheduled monitoring alerts on new/changed findings
+and weekly for unresolved findings; operational errors always fail. These settings
+are separate from committed files. Confirm Renovate activation through its
+onboarding PR or Dependency Dashboard; configuration alone does not run the bot.
 
 Weekly update PRs use a seven-day cooldown and require review. Merge and release
 approved fixes promptly: scanning does not patch published artifacts. See

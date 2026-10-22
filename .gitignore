@@ -11,3 +11,6 @@ møbius
 test/
 *.test
 *.out
+
+# Python security-monitor test caches.
+__pycache__/

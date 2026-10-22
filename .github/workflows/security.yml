@@ -4,10 +4,14 @@ on:
     - cron: '23 5 * * *'
     - cron: '35 6 * * 1'
   workflow_dispatch:
+concurrency:
+  group: security-monitor
+  cancel-in-progress: false
 permissions:
   contents: read
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+  SECURITY_MONITOR_ONLY: true
 jobs:
   published-image:
     runs-on: ubuntu-latest
@@ -48,7 +52,17 @@ jobs:
       - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
         with:
           go-version-file: go.mod
-      - run: make vulncheck
+      - name: Collect reachable Go findings
+        run: |
+          mkdir -p reports
+          source scripts/security/versions.env
+          go run golang.org/x/vuln/cmd/govulncheck@"$GOVULNCHECK_VERSION" -json ./... > reports/govulncheck.json
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        if: always()
+        with:
+          name: source-security-report
+          path: reports/
+          if-no-files-found: error
   refreshed-image:
     if: github.event_name == 'workflow_dispatch' || github.event.schedule == '35 6 * * 1'
     runs-on: ubuntu-latest
@@ -65,3 +79,40 @@ jobs:
         with:
           name: refreshed-image
           path: reports/
+  notify:
+    needs: [published-image, source, refreshed-image]
+    if: always()
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      actions: read
+    steps:
+      - name: Fail on incomplete scans
+        env:
+          IMAGE_STATUS: ${{ needs.published-image.result }}
+          SOURCE_STATUS: ${{ needs.source.result }}
+          REFRESH_STATUS: ${{ needs.refreshed-image.result }}
+        run: |
+          test "$IMAGE_STATUS" = success
+          test "$SOURCE_STATUS" = success
+          test "$REFRESH_STATUS" = success || test "$REFRESH_STATUS" = skipped
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          path: reports
+      - name: Compare findings and write summary
+        id: monitor
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 scripts/security/monitor.py reports monitor-state
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: security-monitor-state
+          path: monitor-state/state.json
+          retention-days: 90
+          if-no-files-found: error
+      - name: Alert on changed findings or weekly reminder
+        if: steps.monitor.outputs.notify == 'true'
+        run: |
+          echo '::error::Security findings require attention. See the job summary and scan artifacts.'
+          exit 1

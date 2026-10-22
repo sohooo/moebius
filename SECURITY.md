@@ -31,12 +31,33 @@ The initial remediation explicitly updates x/net to v0.60.0 (published
 2026-10-08), which fixes five reachable vulnerabilities reported by govulncheck;
 this is a manual security fix, not an automatic age-policy exception.
 
+The v1.4.2 remediation manually adopts Go 1.26.10 (published 2026-10-19)
+to fix reachable GO-2026-6809 / CVE-2026-111943 before the routine cooldown
+elapses. The runtime requires libexpat >=2.9.0-r0 for CVE-2026-77214 and
+refreshes stable OS packages during the build. Automated cooldown rules remain
+unchanged; release scans must pass before publication.
+
 ## Gates and response
 
 CI runs govulncheck and Trivy. Reachable Go vulnerabilities and High/Critical
 image findings (including unfixed findings) block releases. Scanner or database
 failures fail closed. Full JSON and SARIF reports are retained as Actions artifacts,
 without requiring code-scanning write permissions on untrusted pull requests.
+
+Scheduled scans collect findings without applying the CI/release exit gate. A
+separate notification job compares normalized advisories, package versions,
+severity and available fixes with the previous completed monitoring run. It fails
+on new/changed actionable findings or after seven days with unresolved findings.
+Unchanged daily results succeed, with outstanding findings in the job summary and
+full scan artifacts. A green monitoring run means no new alert is due, not that
+all findings are resolved. Resolved findings clear from the next complete scan.
+
+The weekly image result persists between weekly scans. Scanner, download, parsing
+and missing-report errors fail immediately and never replace the baseline. State
+is stored in Actions artifacts for 90 days; absent/expired history treats all
+current findings as new. Runs are serialized to prevent baseline races. Only
+scheduled/manual runs of this workflow on master supply trusted baseline state.
+GitHub failure emails still depend on each user's Actions notification settings.
 
 Triage exploitable Critical findings within one day and target fixes for High
 findings within seven days. Track lower severities in the maintenance backlog.
