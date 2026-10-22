@@ -101,3 +101,19 @@ onboarding PR or Dependency Dashboard; configuration alone does not run the bot.
 Weekly update PRs use a seven-day cooldown and require review. Merge and release
 approved fixes promptly: scanning does not patch published artifacts. See
 [the security policy](../SECURITY.md) for supported versions and emergency fixes.
+
+
+### Recover a missing push-triggered release
+
+If GitHub does not start a tag-push workflow, dispatch the same gated pipeline
+against the existing tag; do not move or recreate a published tag:
+
+```bash
+gh workflow run release.yml --ref master -f tag=vX.Y.Z
+```
+
+The workflow validates the version and checks out `refs/tags/vX.Y.Z` in build
+jobs. Build metadata records that checkout's commit. The manual run's signing
+identity ends in `release.yml@refs/heads/master`; use that exact identity instead
+of `release.yml@refs/tags/VERSION` in the verification commands above. The
+release tag and image revision still identify the source being released.
